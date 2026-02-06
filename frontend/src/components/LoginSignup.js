@@ -1,0 +1,153 @@
+import React, { useState } from 'react';
+import { authAPI } from '../services/api';
+import './LoginSignup.css';
+
+function LoginSignup({ onLogin }) {
+  const [isLogin, setIsLogin] = useState(true);
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'student',
+  });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+    setError('');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        // Login
+        const response = await authAPI.login(formData.email, formData.password);
+        if (response.success && response.user) {
+          onLogin(response.user);
+        } else {
+          setError(response.error || 'Login failed');
+        }
+      } else {
+        // Signup
+        const response = await authAPI.signup(
+          formData.name,
+          formData.email,
+          formData.password,
+          formData.role
+        );
+        if (response.success && response.user) {
+          // Auto login after signup
+          onLogin(response.user);
+        } else {
+          setError(response.error || 'Signup failed');
+        }
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-container">
+      <div className="auth-card">
+        <div className="auth-header">
+          <h1>🎓 MOOC Platform</h1>
+          <p>{isLogin ? 'Welcome back!' : 'Create your account'}</p>
+        </div>
+
+        <div className="auth-tabs">
+          <button
+            className={`tab ${isLogin ? 'active' : ''}`}
+            onClick={() => setIsLogin(true)}
+          >
+            Login
+          </button>
+          <button
+            className={`tab ${!isLogin ? 'active' : ''}`}
+            onClick={() => setIsLogin(false)}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="auth-form">
+          {!isLogin && (
+            <div className="form-group">
+              <label>Full Name</label>
+              <input
+                type="text"
+                name="name"
+                value={formData.name}
+                onChange={handleChange}
+                className="input"
+                required
+                placeholder="Enter your name"
+              />
+            </div>
+          )}
+
+          <div className="form-group">
+            <label>Email</label>
+            <input
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              className="input"
+              required
+              placeholder="Enter your email"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Password</label>
+            <input
+              type="password"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              className="input"
+              required
+              placeholder="Enter your password"
+            />
+          </div>
+
+          {!isLogin && (
+            <div className="form-group">
+              <label>Role</label>
+              <select
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                className="input"
+              >
+                <option value="student">Student</option>
+                <option value="instructor">Instructor</option>
+                <option value="administrator">Administrator</option>
+                <option value="data_analyst">Data Analyst</option>
+              </select>
+            </div>
+          )}
+
+          {error && <div className="error-message">{error}</div>}
+
+          <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading ? 'Please wait...' : isLogin ? 'Login' : 'Sign Up'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+export default LoginSignup;
