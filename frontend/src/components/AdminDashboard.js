@@ -64,6 +64,18 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
+  const handleApproveUser = async (userId) => {
+    try {
+      const response = await adminAPI.approveUser(userId);
+      if (response.success) {
+        alert('User approved successfully');
+        loadUsers();
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to approve user');
+    }
+  };
+
   const handleDeleteUser = async (userId) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
       try {
@@ -105,6 +117,7 @@ function AdminDashboard({ user, onLogout }) {
         <h2>🎓 MOOC</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
         <a href="#users" onClick={() => setActiveTab('users')}>Manage Users</a>
+        <a href="#pending" onClick={() => setActiveTab('pending')}>Pending Approval</a>
         <a href="#courses" onClick={() => setActiveTab('courses')}>Manage Courses</a>
         <a href="#assign" onClick={() => setActiveTab('assign')}>Assign Instructors</a>
         <a href="#logout" onClick={onLogout}>Logout</a>
@@ -132,6 +145,41 @@ function AdminDashboard({ user, onLogout }) {
             </div>
           )}
 
+          {activeTab === 'pending' && (
+            <div>
+              <h2>Pending Approval</h2>
+              {users.filter(u => !u.approved).length === 0 ? (
+                <p>No users pending approval.</p>
+              ) : (
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {users.filter(u => !u.approved).map((u) => (
+                      <tr key={u.user_id}>
+                        <td>{u.name}</td>
+                        <td>{u.email}</td>
+                        <td>{u.role}</td>
+                        <td>
+                          <button className="btn btn-primary" onClick={() => handleApproveUser(u.user_id)} style={{ padding: '6px 12px', marginRight: '8px' }}>Approve</button>
+                          {u.role === 'student' && (
+                            <button className="btn btn-danger" onClick={() => handleDeleteUser(u.user_id)} style={{ padding: '6px 12px' }}>Delete</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
           {activeTab === 'users' && (
             <div>
               <h2>Manage Users</h2>
@@ -141,6 +189,7 @@ function AdminDashboard({ user, onLogout }) {
                     <th>Name</th>
                     <th>Email</th>
                     <th>Role</th>
+                    <th>Status</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -151,14 +200,16 @@ function AdminDashboard({ user, onLogout }) {
                       <td>{u.email}</td>
                       <td>{u.role}</td>
                       <td>
+                        <span className={`status-badge status-${u.approved ? 'completed' : 'ongoing'}`}>
+                          {u.approved ? 'Approved' : 'Pending'}
+                        </span>
+                      </td>
+                      <td>
+                        {!u.approved && (
+                          <button className="btn btn-primary" onClick={() => handleApproveUser(u.user_id)} style={{ padding: '6px 12px', marginRight: '8px' }}>Approve</button>
+                        )}
                         {u.role === 'student' && (
-                          <button
-                            className="btn btn-danger"
-                            onClick={() => handleDeleteUser(u.user_id)}
-                            style={{ padding: '6px 12px', width: 'auto' }}
-                          >
-                            Delete
-                          </button>
+                          <button className="btn btn-danger" onClick={() => handleDeleteUser(u.user_id)} style={{ padding: '6px 12px', width: 'auto' }}>Delete</button>
                         )}
                       </td>
                     </tr>

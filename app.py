@@ -24,30 +24,50 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 @app.route("/api/login", methods=["POST"])
 def login():
-    """Login endpoint - returns user data"""
+    """Login endpoint - verifies password via Supabase Auth, returns user data"""
     try:
         data = request.get_json()
         email = data.get("email")
-        password = data.get("password", "")  # Optional for now
+        password = data.get("password", "")
+
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+
+        # Verify password via Supabase Auth
+        if SUPABASE_URL and SUPABASE_ANON_KEY:
+            auth_url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+            headers = {
+                "apikey": SUPABASE_ANON_KEY,
+                "Content-Type": "application/json"
+            }
+            payload = {"email": email, "password": password}
+            auth_response = requests.post(auth_url, headers=headers, json=payload)
+            if auth_response.status_code != 200:
+                return jsonify({"error": "Invalid email or password"}), 401
+            auth_data = auth_response.json()
+            auth_user_id = auth_data.get("user", {}).get("id")
+        else:
+            return jsonify({"error": "Authentication not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY."}), 500
 
         conn = get_connection()
         cur = conn.cursor()
-
         cur.execute("""
-            SELECT user_id, name, email, role
+            SELECT user_id, name, email, role, COALESCE(approved, false)
             FROM public.users
-            WHERE email = %s
-        """, (email,))
-
+            WHERE user_id = %s
+        """, (auth_user_id,))
         user = cur.fetchone()
-
         cur.close()
         conn.close()
 
         if not user:
-            return jsonify({"error": "Invalid email or password"}), 401
+            return jsonify({"error": "User profile not found"}), 401
 
-        # Return user data
+        # All users (except first admin) must be approved to login
+        is_approved = user[4] if len(user) > 4 else True
+        if not is_approved:
+            return jsonify({"error": "Your account is pending admin approval. Please wait for approval."}), 403
+
         return jsonify({
             "success": True,
             "user": {
@@ -106,19 +126,22 @@ def signup():
             conn = get_connection()
             cur = conn.cursor()
 
-            # Update user profile with name and role
+            # Check if first admin - auto-approve
+            cur.execute("SELECT COUNT(*) FROM public.users WHERE role = 'administrator' AND COALESCE(approved, false) = true")
+            admin_count = cur.fetchone()[0]
+            auto_approve = (role == "administrator" and admin_count == 0)
+
             cur.execute("""
                 UPDATE public.users 
-                SET name = %s, role = %s
+                SET name = %s, role = %s, approved = %s
                 WHERE user_id = %s
-            """, (name, role, user_id))
+            """, (name, role, auto_approve, user_id))
 
-            # If user doesn't exist (trigger didn't fire), create it
             if cur.rowcount == 0:
                 cur.execute("""
-                    INSERT INTO public.users (user_id, name, email, role)
-                    VALUES (%s, %s, %s, %s)
-                """, (user_id, name, email, role))
+                    INSERT INTO public.users (user_id, name, email, role, approved)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (user_id, name, email, role, auto_approve))
 
             # Create student/instructor record based on role
             if role == "student":
@@ -138,15 +161,16 @@ def signup():
             cur.close()
             conn.close()
 
+            if auto_approve:
+                return jsonify({
+                    "success": True,
+                    "message": "Admin account created.",
+                    "user": {"user_id": str(user_id), "name": name, "email": email, "role": role}
+                })
             return jsonify({
                 "success": True,
-                "message": "User created successfully",
-                "user": {
-                    "user_id": str(user_id),
-                    "name": name,
-                    "email": email,
-                    "role": role
-                }
+                "message": "Account created. Please wait for admin approval before logging in.",
+                "user": None
             })
 
         else:
@@ -159,8 +183,8 @@ def signup():
             user_id = uuid.uuid4()
 
             cur.execute("""
-                INSERT INTO public.users (user_id, name, email, role)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO public.users (user_id, name, email, role, approved)
+                VALUES (%s, %s, %s, %s, false)
                 RETURNING user_id
             """, (user_id, name, email, role))
 
@@ -181,13 +205,8 @@ def signup():
 
             return jsonify({
                 "success": True,
-                "message": "User created successfully (without auth)",
-                "user": {
-                    "user_id": str(user_id),
-                    "name": name,
-                    "email": email,
-                    "role": role
-                }
+                "message": "Account created. Please wait for admin approval before logging in.",
+                "user": None
             })
 
     except Exception as e:
@@ -212,9 +231,12 @@ def dashboard():
         cur = conn.cursor()
 
         if role == "student":
+            # Compute counts dynamically from enrolled_in
             cur.execute("""
-                SELECT total_courses_enrolled, total_courses_completed
-                FROM public.student
+                SELECT 
+                    COUNT(*) FILTER (WHERE status != 'dropped') as enrolled,
+                    COUNT(*) FILTER (WHERE status = 'completed') as completed
+                FROM public.enrolled_in
                 WHERE user_id = %s
             """, (user_id,))
             data = cur.fetchone()
@@ -224,10 +246,10 @@ def dashboard():
             }
 
         elif role == "instructor":
+            # Compute total courses dynamically from teaches
             cur.execute("""
-                SELECT total_courses
-                FROM public.instructor
-                WHERE user_id = %s
+                SELECT COUNT(*) FROM public.teaches
+                WHERE instructor_id = %s
             """, (user_id,))
             data = cur.fetchone()
             result = {
@@ -435,7 +457,7 @@ def get_student_profile():
 
 @app.route("/api/student/profile", methods=["PUT"])
 def update_student_profile():
-    """Update student personal information (except name and email)"""
+    """Update student personal information (except email and password)"""
     try:
         data = request.get_json()
         user_id = data.get("user_id")
@@ -443,7 +465,7 @@ def update_student_profile():
         if not user_id:
             return jsonify({"error": "user_id is required"}), 400
 
-        # Extract updatable fields
+        name = data.get("name")
         branch = data.get("branch")
         country = data.get("country")
         dob = data.get("dob")
@@ -452,10 +474,10 @@ def update_student_profile():
         conn = get_connection()
         cur = conn.cursor()
 
-        # Build update query dynamically
-        updates = []
-        params = []
-        
+        if name is not None:
+            cur.execute("UPDATE public.users SET name = %s WHERE user_id = %s", (name, user_id))
+
+        updates, params = [], []
         if branch is not None:
             updates.append("branch = %s")
             params.append(branch)
@@ -469,13 +491,15 @@ def update_student_profile():
             updates.append("phone_number = %s")
             params.append(phone_number)
 
-        if not updates:
+        if not updates and name is None:
+            cur.close()
+            conn.close()
             return jsonify({"error": "No fields to update"}), 400
 
-        params.append(user_id)
-        query = f"UPDATE public.student SET {', '.join(updates)} WHERE user_id = %s"
-        
-        cur.execute(query, params)
+        if updates:
+            params.append(user_id)
+            cur.execute(f"UPDATE public.student SET {', '.join(updates)} WHERE user_id = %s", params)
+
         conn.commit()
 
         cur.close()
@@ -499,7 +523,7 @@ def get_users():
         cur = conn.cursor()
 
         cur.execute("""
-            SELECT user_id, name, email, role
+            SELECT user_id, name, email, role, COALESCE(approved, true)
             FROM public.users
             ORDER BY created_at DESC
         """)
@@ -514,11 +538,35 @@ def get_users():
                 "user_id": str(user[0]),
                 "name": user[1],
                 "email": user[2],
-                "role": user[3]
+                "role": user[3],
+                "approved": user[4]
             })
 
         return jsonify({"success": True, "users": users_list})
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/approve", methods=["POST"])
+def approve_user():
+    """Approve a user (admin only)"""
+    try:
+        data = request.get_json()
+        user_id = data.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE public.users SET approved = true WHERE user_id = %s::uuid
+        """, (user_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True, "message": "User approved"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -617,6 +665,91 @@ def get_instructors():
 # INSTRUCTOR ROUTES
 # =============================
 
+@app.route("/api/instructor/profile", methods=["GET"])
+def get_instructor_profile():
+    """Get instructor personal information"""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT u.user_id, u.name, u.email, i.branch, i.specialization, i.hire_year, i.phone_number
+            FROM public.users u
+            JOIN public.instructor i ON i.user_id = u.user_id
+            WHERE u.user_id = %s
+        """, (user_id,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if not row:
+            return jsonify({"error": "Instructor not found"}), 404
+
+        return jsonify({
+            "success": True,
+            "profile": {
+                "user_id": str(row[0]),
+                "name": row[1],
+                "email": row[2],
+                "branch": row[3],
+                "specialization": row[4],
+                "hire_year": row[5],
+                "phone_number": row[6]
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/instructor/profile", methods=["PUT"])
+def update_instructor_profile():
+    """Update instructor personal information (except name, email, password)"""
+    try:
+        data = request.get_json()
+        user_id = data.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+
+        branch = data.get("branch")
+        specialization = data.get("specialization")
+        hire_year = data.get("hire_year")
+        phone_number = data.get("phone_number")
+
+        conn = get_connection()
+        cur = conn.cursor()
+        updates, params = [], []
+        if branch is not None:
+            updates.append("branch = %s")
+            params.append(branch)
+        if specialization is not None:
+            updates.append("specialization = %s")
+            params.append(specialization)
+        if hire_year is not None:
+            updates.append("hire_year = %s")
+            params.append(int(hire_year) if hire_year else None)
+        if phone_number is not None:
+            updates.append("phone_number = %s")
+            params.append(phone_number)
+
+        if not updates:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "No fields to update"}), 400
+
+        params.append(user_id)
+        cur.execute(f"UPDATE public.instructor SET {', '.join(updates)} WHERE user_id = %s", params)
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True, "message": "Profile updated successfully"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/instructor/courses", methods=["GET"])
 def get_instructor_courses():
     """Get all courses taught by an instructor"""
@@ -690,11 +823,19 @@ def get_course_students(course_id):
         """, (course_id,))
 
         students = cur.fetchall()
-        cur.close()
-        conn.close()
 
         students_list = []
         for student in students:
+            cur.execute("""
+                SELECT COALESCE(SUM(s.marks_obtained), 0), COALESCE(SUM(a.max_marks), 0)
+                FROM public.assignment_submission s
+                JOIN public.assignment a ON a.assignment_id = s.assignment_id
+                WHERE s.student_id = %s AND a.course_id = %s
+            """, (student[0], course_id))
+            tot = cur.fetchone()
+            obtained = tot[0] or 0
+            possible = tot[1] or 0
+            percent = round(obtained / possible * 100, 1) if possible > 0 else 0
             students_list.append({
                 "user_id": str(student[0]),
                 "name": student[1],
@@ -702,8 +843,14 @@ def get_course_students(course_id):
                 "status": student[3],
                 "grade": student[4],
                 "enroll_date": str(student[5]) if student[5] else None,
-                "completion_date": str(student[6]) if student[6] else None
+                "completion_date": str(student[6]) if student[6] else None,
+                "assignment_total_obtained": obtained,
+                "assignment_total_possible": possible,
+                "assignment_percent": percent
             })
+
+        cur.close()
+        conn.close()
 
         return jsonify({"success": True, "students": students_list})
 
@@ -954,6 +1101,357 @@ def add_module_content():
 
 
 # =============================
+# ASSIGNMENT ROUTES
+# =============================
+
+@app.route("/api/instructor/assignment", methods=["POST"])
+def create_assignment():
+    """Create assignment for a course (instructor only). Each assignment 20 marks, total 100."""
+    try:
+        data = request.get_json()
+        instructor_id = data.get("instructor_id")
+        course_id = data.get("course_id")
+        module_number = data.get("module_number")  # Optional
+        title = data.get("title")
+        description = data.get("description", "")
+        assignment_url = data.get("assignment_url")
+        due_date = data.get("due_date")
+        max_marks = data.get("max_marks", 20)
+
+        if not all([instructor_id, course_id, title, assignment_url]):
+            return jsonify({"error": "instructor_id, course_id, title, and assignment_url are required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT COUNT(*) FROM public.teaches
+            WHERE instructor_id = %s AND course_id = %s
+        """, (instructor_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You don't teach this course"}), 403
+
+        cur.execute("""
+            INSERT INTO public.assignment 
+            (course_id, module_number, instructor_id, title, description, assignment_url, due_date, max_marks)
+            VALUES (%s::uuid, %s, %s::uuid, %s, %s, %s, %s::timestamp, %s)
+            RETURNING assignment_id
+        """, (course_id, module_number, instructor_id, title, description, assignment_url, due_date or None, max_marks))
+
+        assignment_id = cur.fetchone()[0]
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Assignment created successfully",
+            "assignment_id": str(assignment_id)
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/instructor/courses/<course_id>/assignments", methods=["GET"])
+def get_instructor_assignments(course_id):
+    """Get assignments for a course (instructor)"""
+    try:
+        instructor_id = request.args.get("instructor_id")
+        if not instructor_id:
+            return jsonify({"error": "instructor_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT COUNT(*) FROM public.teaches
+            WHERE instructor_id = %s AND course_id = %s
+        """, (instructor_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You don't teach this course"}), 403
+
+        cur.execute("""
+            SELECT assignment_id, course_id, module_number, title, description,
+                   assignment_url, due_date, max_marks, created_at
+            FROM public.assignment
+            WHERE course_id = %s
+            ORDER BY created_at DESC
+        """, (course_id,))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        assignments = []
+        for row in rows:
+            assignments.append({
+                "assignment_id": str(row[0]),
+                "course_id": str(row[1]),
+                "module_number": row[2],
+                "title": row[3],
+                "description": row[4],
+                "assignment_url": row[5],
+                "due_date": str(row[6]) if row[6] else None,
+                "max_marks": row[7],
+                "created_at": str(row[8]) if row[8] else None
+            })
+
+        return jsonify({"success": True, "assignments": assignments})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/student/courses/<course_id>/assignments", methods=["GET"])
+def get_student_assignments(course_id):
+    """Get assignments for a course (student - enrolled only)"""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT COUNT(*) FROM public.enrolled_in
+            WHERE user_id = %s AND course_id = %s AND status != 'dropped'
+        """, (user_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You are not enrolled in this course"}), 403
+
+        cur.execute("""
+            SELECT a.assignment_id, a.course_id, a.module_number, a.title, a.description,
+                   a.assignment_url, a.due_date, a.max_marks, a.created_at,
+                   s.submission_id, s.submission_url, s.marks_obtained, s.feedback
+            FROM public.assignment a
+            LEFT JOIN public.assignment_submission s 
+                ON s.assignment_id = a.assignment_id AND s.student_id = %s
+            WHERE a.course_id = %s
+            ORDER BY a.created_at DESC
+        """, (user_id, course_id))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        assignments = []
+        for row in rows:
+            assignments.append({
+                "assignment_id": str(row[0]),
+                "course_id": str(row[1]),
+                "module_number": row[2],
+                "title": row[3],
+                "description": row[4],
+                "assignment_url": row[5],
+                "due_date": str(row[6]) if row[6] else None,
+                "max_marks": row[7],
+                "created_at": str(row[8]) if row[8] else None,
+                "submission_id": str(row[9]) if row[9] else None,
+                "submission_url": row[10],
+                "marks_obtained": row[11],
+                "feedback": row[12]
+            })
+
+        return jsonify({"success": True, "assignments": assignments})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/student/assignment/submit", methods=["POST"])
+def submit_assignment():
+    """Submit assignment solution (student)"""
+    try:
+        data = request.get_json()
+        student_id = data.get("student_id")
+        assignment_id = data.get("assignment_id")
+        submission_url = data.get("submission_url")
+
+        if not all([student_id, assignment_id, submission_url]):
+            return jsonify({"error": "student_id, assignment_id, and submission_url are required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT a.course_id FROM public.assignment a
+            WHERE a.assignment_id = %s
+        """, (assignment_id,))
+        assign = cur.fetchone()
+        if not assign:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Assignment not found"}), 404
+
+        cur.execute("""
+            SELECT COUNT(*) FROM public.enrolled_in
+            WHERE user_id = %s AND course_id = %s AND status != 'dropped'
+        """, (student_id, assign[0]))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You are not enrolled in this course"}), 403
+
+        cur.execute("""
+            INSERT INTO public.assignment_submission (assignment_id, student_id, submission_url)
+            VALUES (%s::uuid, %s::uuid, %s)
+            ON CONFLICT (assignment_id, student_id) 
+            DO UPDATE SET submission_url = EXCLUDED.submission_url, submitted_at = now()
+            RETURNING submission_id
+        """, (assignment_id, student_id, submission_url))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True, "message": "Submission successful"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/instructor/assignments/<assignment_id>/submissions", methods=["GET"])
+def get_assignment_submissions(assignment_id):
+    """Get all submissions for an assignment (instructor)"""
+    try:
+        instructor_id = request.args.get("instructor_id")
+        if not instructor_id:
+            return jsonify({"error": "instructor_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT COUNT(*) FROM public.assignment
+            WHERE assignment_id = %s AND instructor_id = %s
+        """, (assignment_id, instructor_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Assignment not found or you don't own it"}), 403
+
+        cur.execute("SELECT course_id FROM public.assignment WHERE assignment_id = %s", (assignment_id,))
+        course_id_row = cur.fetchone()
+        course_id = str(course_id_row[0]) if course_id_row else None
+
+        cur.execute("""
+            SELECT s.submission_id, s.student_id, u.name, u.email, s.submission_url,
+                   s.submitted_at, s.marks_obtained, s.feedback, a.max_marks
+            FROM public.assignment_submission s
+            JOIN public.users u ON u.user_id = s.student_id
+            JOIN public.assignment a ON a.assignment_id = s.assignment_id
+            WHERE s.assignment_id = %s
+            ORDER BY s.submitted_at DESC
+        """, (assignment_id,))
+
+        rows = cur.fetchall()
+
+        submissions = []
+        if course_id:
+            student_ids = list(set(row[1] for row in rows))
+            course_totals = {}
+            for sid in student_ids:
+                cur.execute("""
+                    SELECT COALESCE(SUM(s2.marks_obtained), 0), COALESCE(SUM(a2.max_marks), 0)
+                    FROM public.assignment_submission s2
+                    JOIN public.assignment a2 ON a2.assignment_id = s2.assignment_id
+                    WHERE s2.student_id = %s AND a2.course_id = %s
+                """, (sid, course_id))
+                tot = cur.fetchone()
+                obtained = tot[0] or 0
+                possible = tot[1] or 0
+                percent = round(obtained / possible * 100, 1) if possible > 0 else 0
+                course_totals[str(sid)] = {"obtained": obtained, "possible": possible, "percent": percent}
+
+        cur.close()
+        conn.close()
+
+        for row in rows:
+            sid = str(row[1])
+            ct = course_totals.get(sid, {"obtained": 0, "possible": 0, "percent": 0})
+            submissions.append({
+                "submission_id": str(row[0]),
+                "student_id": sid,
+                "student_name": row[2],
+                "student_email": row[3],
+                "submission_url": row[4],
+                "submitted_at": str(row[5]) if row[5] else None,
+                "marks_obtained": row[6],
+                "feedback": row[7],
+                "max_marks": row[8],
+                "course_total_obtained": ct["obtained"],
+                "course_total_possible": ct["possible"],
+                "course_percent": ct["percent"]
+            })
+
+        return jsonify({"success": True, "submissions": submissions})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/instructor/submission/grade", methods=["POST"])
+def grade_submission():
+    """Grade an assignment submission (instructor)"""
+    try:
+        data = request.get_json()
+        instructor_id = data.get("instructor_id")
+        submission_id = data.get("submission_id")
+        marks_obtained = data.get("marks_obtained")
+        feedback = data.get("feedback", "")
+
+        if not all([instructor_id, submission_id, marks_obtained is not None]):
+            return jsonify({"error": "instructor_id, submission_id, and marks_obtained are required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT COUNT(*) FROM public.assignment_submission s
+            JOIN public.assignment a ON a.assignment_id = s.assignment_id
+            WHERE s.submission_id = %s AND a.instructor_id = %s
+        """, (submission_id, instructor_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Submission not found or you cannot grade it"}), 403
+
+        cur.execute("""
+            SELECT max_marks FROM public.assignment a
+            JOIN public.assignment_submission s ON s.assignment_id = a.assignment_id
+            WHERE s.submission_id = %s
+        """, (submission_id,))
+        max_marks = cur.fetchone()[0]
+        if marks_obtained < 0 or marks_obtained > max_marks:
+            cur.close()
+            conn.close()
+            return jsonify({"error": f"Marks must be between 0 and {max_marks}"}), 400
+
+        cur.execute("""
+            UPDATE public.assignment_submission
+            SET marks_obtained = %s, feedback = %s
+            WHERE submission_id = %s
+        """, (marks_obtained, feedback, submission_id))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"success": True, "message": "Submission graded successfully"})
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================
 # STUDENT COURSE CONTENT ROUTES
 # =============================
 
@@ -1017,6 +1515,137 @@ def get_student_course_modules(course_id):
 
         return jsonify({"success": True, "modules": modules_list})
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =============================
+# ANALYST ROUTES
+# =============================
+
+@app.route("/api/analyst/overview", methods=["GET"])
+def analyst_overview():
+    """Get platform overview stats for analyst"""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM public.users")
+        total_users = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM public.course")
+        total_courses = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM public.enrolled_in WHERE status != 'dropped'")
+        total_enrollments = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM public.enrolled_in WHERE status = 'completed'")
+        completed_enrollments = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM public.assignment")
+        total_assignments = cur.fetchone()[0]
+
+        completion_rate = round(completed_enrollments / total_enrollments * 100, 1) if total_enrollments > 0 else 0
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "total_users": total_users,
+                "total_courses": total_courses,
+                "total_enrollments": total_enrollments,
+                "completed_enrollments": completed_enrollments,
+                "completion_rate": completion_rate,
+                "total_assignments": total_assignments
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/courses", methods=["GET"])
+def analyst_courses():
+    """Get all courses with enrollment and completion stats"""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT c.course_id, c.title, c.level, c.duration,
+                   COUNT(e.user_id) FILTER (WHERE e.status != 'dropped') as enrolled,
+                   COUNT(e.user_id) FILTER (WHERE e.status = 'completed') as completed,
+                   (SELECT COUNT(*) FROM public.assignment WHERE course_id = c.course_id) as assignment_count
+            FROM public.course c
+            LEFT JOIN public.enrolled_in e ON e.course_id = c.course_id
+            GROUP BY c.course_id, c.title, c.level, c.duration
+            ORDER BY enrolled DESC
+        """)
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        courses = []
+        for row in rows:
+            enrolled = row[4] or 0
+            completed = row[5] or 0
+            rate = round(completed / enrolled * 100, 1) if enrolled > 0 else 0
+            courses.append({
+                "course_id": str(row[0]),
+                "title": row[1],
+                "level": row[2],
+                "duration": row[3],
+                "enrolled": enrolled,
+                "completed": completed,
+                "completion_rate": rate,
+                "assignment_count": row[6] or 0
+            })
+
+        return jsonify({"success": True, "courses": courses})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/insights", methods=["GET"])
+def analyst_insights():
+    """Get analytical insights"""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT c.level, COUNT(*) as cnt
+            FROM public.enrolled_in e
+            JOIN public.course c ON c.course_id = e.course_id
+            WHERE e.status != 'dropped'
+            GROUP BY c.level
+        """)
+        enrollments_by_level = [{"level": row[0] or "Unknown", "count": row[1]} for row in cur.fetchall()]
+
+        cur.execute("""
+            SELECT u.role, COUNT(*) FROM public.users u GROUP BY u.role
+        """)
+        users_by_role = [{"role": row[0], "count": row[1]} for row in cur.fetchall()]
+
+        cur.execute("""
+            SELECT c.title, COUNT(e.user_id) as cnt
+            FROM public.course c
+            LEFT JOIN public.enrolled_in e ON e.course_id = c.course_id AND e.status != 'dropped'
+            GROUP BY c.course_id, c.title
+            ORDER BY cnt DESC
+            LIMIT 5
+        """)
+        top_courses = [{"title": row[0], "enrollments": row[1]} for row in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "insights": {
+                "enrollments_by_level": enrollments_by_level,
+                "users_by_role": users_by_role,
+                "top_courses_by_enrollment": top_courses
+            }
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

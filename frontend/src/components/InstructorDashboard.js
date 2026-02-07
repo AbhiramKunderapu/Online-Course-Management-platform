@@ -10,13 +10,22 @@ function InstructorDashboard({ user, onLogout }) {
   const [modules, setModules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [courseActionTab, setCourseActionTab] = useState('modules');
   const [gradingForm, setGradingForm] = useState({ student_id: '', grade: '', status: 'completed' });
   const [contentForm, setContentForm] = useState({ course_id: '', module_number: '', title: '', type: 'video', url: '' });
   const [moduleForm, setModuleForm] = useState({ course_id: '', module_number: '', name: '', duration: '' });
+  const [assignmentForm, setAssignmentForm] = useState({ course_id: '', title: '', assignment_url: '', description: '', due_date: '', max_marks: 20 });
+  const [assignments, setAssignments] = useState([]);
+  const [selectedAssignment, setSelectedAssignment] = useState(null);
+  const [submissions, setSubmissions] = useState([]);
+  const [profile, setProfile] = useState(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editForm, setEditForm] = useState({});
 
   useEffect(() => {
     loadDashboardData();
     loadCourses();
+    loadProfile();
   }, []);
 
   const loadDashboardData = async () => {
@@ -40,6 +49,37 @@ function InstructorDashboard({ user, onLogout }) {
       }
     } catch (error) {
       console.error('Error loading courses:', error);
+    }
+  };
+
+  const loadProfile = async () => {
+    try {
+      const response = await instructorAPI.getProfile(user.user_id);
+      if (response.success) {
+        setProfile(response.profile);
+        setEditForm({
+          branch: response.profile.branch || '',
+          specialization: response.profile.specialization || '',
+          hire_year: response.profile.hire_year || '',
+          phone_number: response.profile.phone_number || ''
+        });
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    try {
+      const response = await instructorAPI.updateProfile(user.user_id, editForm);
+      if (response.success) {
+        alert('Profile updated successfully');
+        setIsEditingProfile(false);
+        loadProfile();
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to update profile');
     }
   };
 
@@ -126,10 +166,12 @@ function InstructorDashboard({ user, onLogout }) {
 
   const handleCreateModule = async (e) => {
     e.preventDefault();
+    const courseId = selectedCourse || moduleForm.course_id;
+    if (!courseId) return;
     try {
       const response = await instructorAPI.createModule(
         user.user_id,
-        moduleForm.course_id,
+        courseId,
         parseInt(moduleForm.module_number),
         moduleForm.name,
         moduleForm.duration
@@ -137,9 +179,7 @@ function InstructorDashboard({ user, onLogout }) {
       if (response.success) {
         alert('Module created successfully!');
         setModuleForm({ course_id: '', module_number: '', name: '', duration: '' });
-        if (moduleForm.course_id) {
-          loadCourseModules(moduleForm.course_id);
-        }
+        if (courseId) loadCourseModules(courseId);
       }
     } catch (error) {
       alert(error.response?.data?.error || 'Failed to create module');
@@ -148,10 +188,12 @@ function InstructorDashboard({ user, onLogout }) {
 
   const handleAddContent = async (e) => {
     e.preventDefault();
+    const courseId = selectedCourse || contentForm.course_id;
+    if (!courseId) return;
     try {
       const response = await instructorAPI.addModuleContent(
         user.user_id,
-        contentForm.course_id,
+        courseId,
         contentForm.module_number,
         contentForm.title,
         contentForm.type,
@@ -160,12 +202,71 @@ function InstructorDashboard({ user, onLogout }) {
       if (response.success) {
         alert('Content added successfully!');
         setContentForm({ course_id: '', module_number: '', title: '', type: 'video', url: '' });
-        if (contentForm.course_id) {
-          loadCourseModules(contentForm.course_id);
-        }
+        if (courseId) loadCourseModules(courseId);
       }
     } catch (error) {
       alert(error.response?.data?.error || 'Failed to add content');
+    }
+  };
+
+  const loadAssignments = async (courseId) => {
+    try {
+      const response = await instructorAPI.getCourseAssignments(user.user_id, courseId);
+      if (response.success) setAssignments(response.assignments);
+    } catch (error) {
+      console.error('Error loading assignments:', error);
+    }
+  };
+
+  const loadSubmissions = async (assignmentId) => {
+    try {
+      const response = await instructorAPI.getAssignmentSubmissions(user.user_id, assignmentId);
+      if (response.success) setSubmissions(response.submissions);
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to load submissions');
+    }
+  };
+
+  const handleCreateAssignment = async (e) => {
+    e.preventDefault();
+    const courseId = selectedCourse || assignmentForm.course_id;
+    if (!courseId) return;
+    try {
+      const response = await instructorAPI.createAssignment(
+        user.user_id,
+        courseId,
+        assignmentForm.title,
+        assignmentForm.assignment_url,
+        {
+          description: assignmentForm.description,
+          due_date: assignmentForm.due_date || null,
+          max_marks: parseInt(assignmentForm.max_marks) || 20
+        }
+      );
+      if (response.success) {
+        alert('Assignment created successfully!');
+        setAssignmentForm({ course_id: '', title: '', assignment_url: '', description: '', due_date: '', max_marks: 20 });
+        if (courseId) loadAssignments(courseId);
+        loadDashboardData();
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to create assignment');
+    }
+  };
+
+  const handleGradeSubmission = async (e, submissionId) => {
+    e.preventDefault();
+    const form = e.target;
+    const marks = parseInt(form.marks?.value) ?? 0;
+    const feedback = form.feedback?.value ?? '';
+    try {
+      const response = await instructorAPI.gradeSubmission(user.user_id, submissionId, marks, feedback);
+      if (response.success) {
+        alert('Submission graded successfully!');
+        if (selectedAssignment) loadSubmissions(selectedAssignment);
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to grade submission');
     }
   };
 
@@ -178,10 +279,8 @@ function InstructorDashboard({ user, onLogout }) {
       <div className="sidebar">
         <h2>🎓 MOOC</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
-        <a href="#courses" onClick={() => setActiveTab('courses')}>My Courses</a>
-        <a href="#students" onClick={() => setActiveTab('students')}>Manage Students</a>
-        <a href="#modules" onClick={() => setActiveTab('modules')}>Create Modules</a>
-        <a href="#content" onClick={() => setActiveTab('content')}>Add Content</a>
+        <a href="#profile" onClick={() => setActiveTab('profile')}>Personal Info</a>
+        <a href="#courses" onClick={() => { setActiveTab('courses'); setSelectedCourse(null); }}>My Courses</a>
         <a href="#logout" onClick={onLogout}>Logout</a>
       </div>
 
@@ -191,6 +290,42 @@ function InstructorDashboard({ user, onLogout }) {
         </div>
 
         <div className="dashboard-content">
+          {activeTab === 'profile' && (
+            <div>
+              <h2>Personal Information</h2>
+              {profile && (
+                <div className="card">
+                  {!isEditingProfile ? (
+                    <div>
+                      <div className="profile-view">
+                        <div className="profile-field"><label>Name:</label><span>{profile.name}</span></div>
+                        <div className="profile-field"><label>Email:</label><span>{profile.email}</span></div>
+                        <div className="profile-field"><label>Branch:</label><span>{profile.branch || 'Not set'}</span></div>
+                        <div className="profile-field"><label>Specialization:</label><span>{profile.specialization || 'Not set'}</span></div>
+                        <div className="profile-field"><label>Hire Year:</label><span>{profile.hire_year || 'Not set'}</span></div>
+                        <div className="profile-field"><label>Phone Number:</label><span>{profile.phone_number || 'Not set'}</span></div>
+                      </div>
+                      <button className="btn btn-primary" onClick={() => setIsEditingProfile(true)} style={{ marginTop: '20px' }}>Edit Personal Info</button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleUpdateProfile}>
+                      <div className="form-group"><label>Name (Cannot be changed)</label><input type="text" className="input" value={profile.name} disabled /></div>
+                      <div className="form-group"><label>Email (Cannot be changed)</label><input type="email" className="input" value={profile.email} disabled /></div>
+                      <div className="form-group"><label>Branch</label><input type="text" className="input" value={editForm.branch} onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })} placeholder="e.g., CSE" /></div>
+                      <div className="form-group"><label>Specialization</label><input type="text" className="input" value={editForm.specialization} onChange={(e) => setEditForm({ ...editForm, specialization: e.target.value })} placeholder="e.g., Machine Learning" /></div>
+                      <div className="form-group"><label>Hire Year</label><input type="number" className="input" value={editForm.hire_year} onChange={(e) => setEditForm({ ...editForm, hire_year: e.target.value })} placeholder="e.g., 2020" /></div>
+                      <div className="form-group"><label>Phone Number</label><input type="tel" className="input" value={editForm.phone_number} onChange={(e) => setEditForm({ ...editForm, phone_number: e.target.value })} placeholder="e.g., +1234567890" /></div>
+                      <div style={{ display: 'flex', gap: '10px' }}>
+                        <button type="submit" className="btn btn-primary">Save Changes</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => { setIsEditingProfile(false); loadProfile(); }}>Cancel</button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'dashboard' && (
             <div>
               <h2>Instructor Dashboard</h2>
@@ -211,13 +346,13 @@ function InstructorDashboard({ user, onLogout }) {
 
           {activeTab === 'courses' && (
             <div>
-              <h2>Courses I Teach</h2>
+              <h2>My Courses</h2>
               {courses.length === 0 ? (
                 <p>You are not teaching any courses yet.</p>
-              ) : (
+              ) : !selectedCourse ? (
                 <div className="courses-grid">
                   {courses.map((course) => (
-                    <div key={course.course_id} className="course-card">
+                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { handleSelectCourse(course.course_id); loadAssignments(course.course_id); setCourseActionTab('modules'); }}>
                       <h3>{course.title}</h3>
                       <p className="course-level">{course.level}</p>
                       <p className="course-duration">Duration: {course.duration}</p>
@@ -227,367 +362,214 @@ function InstructorDashboard({ user, onLogout }) {
                       {course.description && (
                         <p className="course-description">{course.description}</p>
                       )}
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => {
-                          setSelectedCourse(course.course_id);
-                          setActiveTab('students');
-                          loadCourseStudents(course.course_id);
-                        }}
-                      >
-                        View Students
-                      </button>
+                      <p className="course-action-hint">Click to manage modules, content & assignments</p>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'students' && (
-            <div>
-              <h2>Manage Students</h2>
-              
-              {!selectedCourse && (
-                <div className="card">
-                  <p>Please select a course to view students:</p>
-                  <select
-                    className="input"
-                    value={selectedCourse || ''}
-                    onChange={(e) => handleSelectCourse(e.target.value)}
-                    style={{ marginTop: '10px' }}
-                  >
-                    <option value="">Select a course</option>
-                    {courses.map((course) => (
-                      <option key={course.course_id} value={course.course_id}>
-                        {course.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {selectedCourse && (
-                <>
-                  <div className="card" style={{ marginBottom: '20px' }}>
-                    <h3>Selected Course: {courses.find(c => c.course_id === selectedCourse)?.title}</h3>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setSelectedCourse(null);
-                        setStudents([]);
-                      }}
-                      style={{ marginTop: '10px', width: 'auto' }}
-                    >
-                      Change Course
-                    </button>
+              ) : (
+                <div className="course-management-view">
+                  <div className="course-header-bar">
+                    <h3>{courses.find(c => c.course_id === selectedCourse)?.title}</h3>
+                    <button className="btn btn-secondary" onClick={() => { setSelectedCourse(null); setStudents([]); setModules([]); setAssignments([]); setSelectedAssignment(null); setSubmissions([]); }}>← Back to Courses</button>
                   </div>
-
-                  <div className="card">
-                    <h3>Enrolled Students</h3>
-                    {students.length === 0 ? (
-                      <p>No students enrolled in this course.</p>
-                    ) : (
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Status</th>
-                            <th>Grade</th>
-                            <th>Enrolled Date</th>
-                            <th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {students.map((student) => (
-                            <tr key={student.user_id}>
-                              <td>{student.name}</td>
-                              <td>{student.email}</td>
-                              <td>
-                                <span className={`status-badge status-${student.status}`}>
-                                  {student.status}
-                                </span>
-                              </td>
-                              <td>{student.grade || '-'}</td>
-                              <td>{student.enroll_date}</td>
-                              <td>
-                                <button
-                                  className="btn btn-danger"
-                                  onClick={() => handleRemoveStudent(student.user_id)}
-                                  style={{ padding: '6px 12px', width: 'auto', marginRight: '5px' }}
-                                >
-                                  Remove
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <div className="course-action-tabs">
+                    <button className={courseActionTab === 'modules' ? 'active' : ''} onClick={() => setCourseActionTab('modules')}>Create Module</button>
+                    <button className={courseActionTab === 'content' ? 'active' : ''} onClick={() => setCourseActionTab('content')}>Add Content</button>
+                    <button className={courseActionTab === 'assignments' ? 'active' : ''} onClick={() => setCourseActionTab('assignments')}>Assignments</button>
+                    <button className={courseActionTab === 'students' ? 'active' : ''} onClick={() => setCourseActionTab('students')}>Manage Students</button>
+                  </div>
+                  <div className="course-action-content">
+                    {courseActionTab === 'modules' && (
+                      <div className="card">
+                        <h3>Create Module</h3>
+                        <form onSubmit={handleCreateModule}>
+                          <input type="hidden" value={selectedCourse} onChange={() => {}} />
+                          <div className="form-row">
+                            <div className="form-group">
+                              <label>Module Number</label>
+                              <input type="number" className="input" value={moduleForm.module_number} onChange={(e) => setModuleForm({ ...moduleForm, course_id: selectedCourse, module_number: e.target.value })} placeholder="e.g., 1, 2, 3" min="1" required />
+                            </div>
+                            <div className="form-group">
+                              <label>Module Name</label>
+                              <input type="text" className="input" value={moduleForm.name} onChange={(e) => setModuleForm({ ...moduleForm, course_id: selectedCourse, name: e.target.value })} placeholder="e.g., Introduction" required />
+                            </div>
+                            <div className="form-group">
+                              <label>Duration (Optional)</label>
+                              <input type="text" className="input" value={moduleForm.duration} onChange={(e) => setModuleForm({ ...moduleForm, duration: e.target.value })} placeholder="e.g., 2 weeks" />
+                            </div>
+                          </div>
+                          <button type="submit" className="btn btn-primary" onClick={() => setModuleForm(f => ({ ...f, course_id: selectedCourse }))}>Create Module</button>
+                        </form>
+                        {modules.length > 0 && (
+                          <div className="existing-items" style={{ marginTop: '20px' }}>
+                            <h4>Existing Modules</h4>
+                            <ul>{modules.map((m) => <li key={m.module_number}>Module {m.module_number}: {m.name}{m.duration && ` (${m.duration})`}</li>)}</ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {courseActionTab === 'content' && (
+                      <div className="card">
+                        <h3>Add Content to Module</h3>
+                        <form onSubmit={handleAddContent}>
+                          <div className="form-group">
+                            <label>Select Module</label>
+                            <select className="input" value={contentForm.module_number} onChange={(e) => setContentForm({ ...contentForm, course_id: selectedCourse, module_number: parseInt(e.target.value) })} required>
+                              <option value="">Select a module</option>
+                              {modules.map((m) => <option key={m.module_number} value={m.module_number}>Module {m.module_number}: {m.name}</option>)}
+                            </select>
+                          </div>
+                          {modules.length === 0 && <p className="form-hint">Create modules first.</p>}
+                          <div className="form-group">
+                            <label>Content Title</label>
+                            <input type="text" className="input" value={contentForm.title} onChange={(e) => setContentForm({ ...contentForm, title: e.target.value })} placeholder="e.g., Introduction video" required />
+                          </div>
+                          <div className="form-group">
+                            <label>Content Type</label>
+                            <select className="input" value={contentForm.type} onChange={(e) => setContentForm({ ...contentForm, type: e.target.value })}>
+                              <option value="video">Video</option>
+                              <option value="document">Document</option>
+                              <option value="quiz">Quiz</option>
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label>Content URL</label>
+                            <input type="url" className="input" value={contentForm.url} onChange={(e) => setContentForm({ ...contentForm, url: e.target.value })} placeholder="https://..." required />
+                          </div>
+                          <button type="submit" className="btn btn-primary" onClick={() => setContentForm(f => ({ ...f, course_id: selectedCourse }))}>Add Content</button>
+                        </form>
+                      </div>
+                    )}
+                    {courseActionTab === 'assignments' && (
+                      <div>
+                        <div className="card" style={{ marginBottom: '20px' }}>
+                          <h3>Create Assignment</h3>
+                          <form onSubmit={handleCreateAssignment}>
+                            <div className="form-row">
+                              <div className="form-group">
+                                <label>Title</label>
+                                <input type="text" className="input" value={assignmentForm.title} onChange={(e) => setAssignmentForm({ ...assignmentForm, course_id: selectedCourse, title: e.target.value })} placeholder="e.g., Module 1 Assignment" required />
+                              </div>
+                              <div className="form-group">
+                                <label>Assignment URL</label>
+                                <input type="url" className="input" value={assignmentForm.assignment_url} onChange={(e) => setAssignmentForm({ ...assignmentForm, assignment_url: e.target.value })} placeholder="https://..." required />
+                              </div>
+                            </div>
+                            <div className="form-group">
+                              <label>Description (Optional)</label>
+                              <textarea className="input" value={assignmentForm.description} onChange={(e) => setAssignmentForm({ ...assignmentForm, description: e.target.value })} rows={2} />
+                            </div>
+                            <div className="form-row">
+                              <div className="form-group">
+                                <label>Due Date</label>
+                                <input type="datetime-local" className="input" value={assignmentForm.due_date} onChange={(e) => setAssignmentForm({ ...assignmentForm, due_date: e.target.value })} />
+                              </div>
+                              <div className="form-group">
+                                <label>Max Marks</label>
+                                <input type="number" className="input" min="1" max="100" value={assignmentForm.max_marks} onChange={(e) => setAssignmentForm({ ...assignmentForm, max_marks: e.target.value })} />
+                              </div>
+                            </div>
+                            <button type="submit" className="btn btn-primary" onClick={() => setAssignmentForm(f => ({ ...f, course_id: selectedCourse }))}>Create Assignment</button>
+                          </form>
+                        </div>
+                        <div className="card">
+                          <h3>Course Assignments</h3>
+                          {assignments.length === 0 ? <p>No assignments yet.</p> : (
+                            assignments.map((a) => (
+                              <div key={a.assignment_id} className="assignment-row">
+                                <div><strong>{a.title}</strong> ({a.max_marks} marks) — <a href={a.assignment_url} target="_blank" rel="noopener noreferrer">View</a></div>
+                                <button className="btn btn-primary btn-sm" onClick={() => { setSelectedAssignment(a.assignment_id); loadSubmissions(a.assignment_id); }}>Submissions</button>
+                              </div>
+                            ))
+                          )}
+                          {selectedAssignment && (
+                            <div className="submissions-panel">
+                              <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedAssignment(null); setSubmissions([]); }}>Close</button>
+                              {submissions.length > 0 ? (
+                                <table className="table">
+                                  <thead><tr><th>Student</th><th>Course Total</th><th>Link</th><th>Marks</th><th>Grade</th></tr></thead>
+                                  <tbody>
+                                    {submissions.map((s) => (
+                                      <tr key={s.submission_id}>
+                                        <td>{s.student_name}</td>
+                                        <td>{s.course_percent != null ? `${s.course_total_obtained}/${s.course_total_possible} (${s.course_percent}%)` : '-'}</td>
+                                        <td><a href={s.submission_url} target="_blank" rel="noopener noreferrer">View</a></td>
+                                        <td>{s.marks_obtained != null ? `${s.marks_obtained}/${s.max_marks}` : '-'}</td>
+                                        <td>
+                                          <form onSubmit={(e) => handleGradeSubmission(e, s.submission_id)} className="grade-form">
+                                            <input name="marks" type="number" className="input" min="0" max={s.max_marks} placeholder="Marks" defaultValue={s.marks_obtained ?? ''} />
+                                            <input name="feedback" type="text" className="input" placeholder="Feedback" defaultValue={s.feedback ?? ''} />
+                                            <button type="submit" className="btn btn-primary btn-sm">Grade</button>
+                                          </form>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : <p>No submissions yet.</p>}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {courseActionTab === 'students' && (
+                      <div>
+                        <div className="card">
+                          <h3>Enrolled Students</h3>
+                          {students.length === 0 ? <p>No students enrolled.</p> : (
+                            <table className="table">
+                              <thead><tr><th>Name</th><th>Email</th><th>Assignment %</th><th>Status</th><th>Grade</th><th>Actions</th></tr></thead>
+                              <tbody>
+                                {students.map((s) => (
+                                  <tr key={s.user_id}>
+                                    <td>{s.name}</td>
+                                    <td>{s.email}</td>
+                                    <td>{s.assignment_percent != null ? `${s.assignment_total_obtained}/${s.assignment_total_possible} (${s.assignment_percent}%)` : '-'}</td>
+                                    <td><span className={`status-badge status-${s.status}`}>{s.status}</span></td>
+                                    <td>{s.grade || '-'}</td>
+                                    <td><button className="btn btn-danger btn-sm" onClick={() => handleRemoveStudent(s.user_id)}>Remove</button></td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                        <div className="card" style={{ marginTop: '20px' }}>
+                          <h3>Grade Student</h3>
+                          <form onSubmit={handleGradeStudent}>
+                            <div className="form-group">
+                              <label>Select Student</label>
+                              <select className="input" value={gradingForm.student_id} onChange={(e) => setGradingForm({ ...gradingForm, student_id: e.target.value })} required>
+                                <option value="">Select...</option>
+                                {students.filter(s => s.status === 'ongoing' || s.status === 'completed').map((s) => (
+                                  <option key={s.user_id} value={s.user_id}>{s.name} {s.assignment_percent != null ? `(${s.assignment_percent}%)` : ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="form-row">
+                              <div className="form-group">
+                                <label>Grade</label>
+                                <input type="text" className="input" value={gradingForm.grade} onChange={(e) => setGradingForm({ ...gradingForm, grade: e.target.value })} placeholder="e.g., A, B+" required />
+                              </div>
+                              <div className="form-group">
+                                <label>Status</label>
+                                <select className="input" value={gradingForm.status} onChange={(e) => setGradingForm({ ...gradingForm, status: e.target.value })}>
+                                  <option value="completed">Completed</option>
+                                  <option value="ongoing">Ongoing</option>
+                                </select>
+                              </div>
+                            </div>
+                            <button type="submit" className="btn btn-primary">Submit Grade</button>
+                          </form>
+                        </div>
+                      </div>
                     )}
                   </div>
-
-                  <div className="card" style={{ marginTop: '20px' }}>
-                    <h3>Grade Student</h3>
-                    <form onSubmit={handleGradeStudent}>
-                      <div className="form-group">
-                        <label>Select Student</label>
-                        <select
-                          className="input"
-                          value={gradingForm.student_id}
-                          onChange={(e) =>
-                            setGradingForm({ ...gradingForm, student_id: e.target.value })
-                          }
-                          required
-                        >
-                          <option value="">Select a student</option>
-                          {students
-                            .filter(s => s.status === 'ongoing' || s.status === 'completed')
-                            .map((student) => (
-                              <option key={student.user_id} value={student.user_id}>
-                                {student.name} ({student.status})
-                              </option>
-                            ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label>Grade</label>
-                        <input
-                          type="text"
-                          className="input"
-                          value={gradingForm.grade}
-                          onChange={(e) =>
-                            setGradingForm({ ...gradingForm, grade: e.target.value })
-                          }
-                          placeholder="e.g., A, B+, 85"
-                          required
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label>Status</label>
-                        <select
-                          className="input"
-                          value={gradingForm.status}
-                          onChange={(e) =>
-                            setGradingForm({ ...gradingForm, status: e.target.value })
-                          }
-                          required
-                        >
-                          <option value="completed">Completed</option>
-                          <option value="ongoing">Ongoing</option>
-                        </select>
-                      </div>
-                      <button type="submit" className="btn btn-primary">
-                        Submit Grade
-                      </button>
-                    </form>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'modules' && (
-            <div>
-              <h2>Create Module</h2>
-              <form onSubmit={handleCreateModule} className="card">
-                <div className="form-group">
-                  <label>Select Course</label>
-                  <select
-                    className="input"
-                    value={moduleForm.course_id}
-                    onChange={(e) => {
-                      setModuleForm({ ...moduleForm, course_id: e.target.value });
-                      if (e.target.value) {
-                        loadCourseModules(e.target.value);
-                      }
-                    }}
-                    required
-                  >
-                    <option value="">Select a course</option>
-                    {courses.map((course) => (
-                      <option key={course.course_id} value={course.course_id}>
-                        {course.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {moduleForm.course_id && (
-                  <>
-                    <div className="form-group">
-                      <label>Module Number</label>
-                      <input
-                        type="number"
-                        className="input"
-                        value={moduleForm.module_number}
-                        onChange={(e) =>
-                          setModuleForm({ ...moduleForm, module_number: e.target.value })
-                        }
-                        placeholder="e.g., 1, 2, 3"
-                        min="1"
-                        required
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Module Name</label>
-                      <input
-                        type="text"
-                        className="input"
-                        value={moduleForm.name}
-                        onChange={(e) =>
-                          setModuleForm({ ...moduleForm, name: e.target.value })
-                        }
-                        placeholder="e.g., Introduction to Python"
-                        required
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Duration (Optional)</label>
-                      <input
-                        type="text"
-                        className="input"
-                        value={moduleForm.duration}
-                        onChange={(e) =>
-                          setModuleForm({ ...moduleForm, duration: e.target.value })
-                        }
-                        placeholder="e.g., 2 weeks, 5 hours"
-                      />
-                    </div>
-
-                    <button type="submit" className="btn btn-primary">
-                      Create Module
-                    </button>
-                  </>
-                )}
-              </form>
-
-              {moduleForm.course_id && modules.length > 0 && (
-                <div className="card" style={{ marginTop: '20px' }}>
-                  <h3>Existing Modules</h3>
-                  <ul>
-                    {modules.map((module) => (
-                      <li key={module.module_number} style={{ marginBottom: '8px' }}>
-                        Module {module.module_number}: {module.name}
-                        {module.duration && ` (${module.duration})`}
-                      </li>
-                    ))}
-                  </ul>
                 </div>
               )}
             </div>
           )}
 
-          {activeTab === 'content' && (
-            <div>
-              <h2>Add Content to Module</h2>
-              <form onSubmit={handleAddContent} className="card">
-                <div className="form-group">
-                  <label>Select Course</label>
-                  <select
-                    className="input"
-                    value={contentForm.course_id}
-                    onChange={(e) => {
-                      setContentForm({ ...contentForm, course_id: e.target.value });
-                      if (e.target.value) {
-                        loadCourseModules(e.target.value);
-                      }
-                    }}
-                    required
-                  >
-                    <option value="">Select a course</option>
-                    {courses.map((course) => (
-                      <option key={course.course_id} value={course.course_id}>
-                        {course.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {contentForm.course_id && (
-                  <>
-                    <div className="form-group">
-                      <label>Select Module</label>
-                      <select
-                        className="input"
-                        value={contentForm.module_number}
-                        onChange={(e) =>
-                          setContentForm({
-                            ...contentForm,
-                            module_number: parseInt(e.target.value),
-                          })
-                        }
-                        required
-                      >
-                        <option value="">Select a module</option>
-                        {modules.map((module) => (
-                          <option key={module.module_number} value={module.module_number}>
-                            Module {module.module_number}: {module.name}
-                          </option>
-                        ))}
-                      </select>
-                      {modules.length === 0 && (
-                        <p style={{ color: '#666', fontSize: '14px', marginTop: '5px' }}>
-                          No modules found for this course. Please create modules first.
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="form-group">
-                      <label>Content Title</label>
-                      <input
-                        type="text"
-                        className="input"
-                        value={contentForm.title}
-                        onChange={(e) =>
-                          setContentForm({ ...contentForm, title: e.target.value })
-                        }
-                        placeholder="e.g., Introduction to Python"
-                        required
-                      />
-                    </div>
-
-                    <div className="form-group">
-                      <label>Content Type</label>
-                      <select
-                        className="input"
-                        value={contentForm.type}
-                        onChange={(e) =>
-                          setContentForm({ ...contentForm, type: e.target.value })
-                        }
-                        required
-                      >
-                        <option value="video">Video</option>
-                        <option value="document">Document</option>
-                        <option value="quiz">Quiz</option>
-                        <option value="assignment">Assignment</option>
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Content URL</label>
-                      <input
-                        type="url"
-                        className="input"
-                        value={contentForm.url}
-                        onChange={(e) =>
-                          setContentForm({ ...contentForm, url: e.target.value })
-                        }
-                        placeholder="https://example.com/content"
-                        required
-                      />
-                    </div>
-
-                    <button type="submit" className="btn btn-primary">
-                      Add Content
-                    </button>
-                  </>
-                )}
-              </form>
-            </div>
-          )}
         </div>
       </div>
     </div>

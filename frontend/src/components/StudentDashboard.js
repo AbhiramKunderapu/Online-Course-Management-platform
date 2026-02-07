@@ -13,8 +13,11 @@ function StudentDashboard({ user, onLogout }) {
   const [editForm, setEditForm] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedCourseForContent, setSelectedCourseForContent] = useState(null);
+  const [selectedActiveCourse, setSelectedActiveCourse] = useState(null);
   const [courseModules, setCourseModules] = useState([]);
+  const [assignments, setAssignments] = useState([]);
+  const [submittingFor, setSubmittingFor] = useState(null);
+  const [submitUrl, setSubmitUrl] = useState('');
 
   useEffect(() => {
     loadDashboardData();
@@ -88,6 +91,10 @@ function StudentDashboard({ user, onLogout }) {
       if (response.success) {
         setProfile(response.profile);
         setEditForm({
+          name: response.profile.name || '',
+          branch: response.profile.branch || '',
+          country: response.profile.country || '',
+          dob: response.profile.dob || '',
           phone_number: response.profile.phone_number || '',
         });
       }
@@ -115,6 +122,10 @@ function StudentDashboard({ user, onLogout }) {
     try {
       // Only send phone_number for update
       const response = await studentAPI.updateProfile(user.user_id, {
+        name: editForm.name,
+        branch: editForm.branch,
+        country: editForm.country,
+        dob: editForm.dob,
         phone_number: editForm.phone_number
       });
       if (response.success) {
@@ -146,6 +157,32 @@ function StudentDashboard({ user, onLogout }) {
     }
   };
 
+  const loadAssignments = async (courseId) => {
+    try {
+      const response = await studentCourseAPI.getCourseAssignments(user.user_id, courseId);
+      if (response.success) setAssignments(response.assignments);
+    } catch (error) {
+      console.error('Error loading assignments:', error);
+      alert(error.response?.data?.error || 'Failed to load assignments');
+    }
+  };
+
+  const handleSubmitAssignment = async (e) => {
+    e.preventDefault();
+    if (!submittingFor || !submitUrl.trim()) return;
+    try {
+      const response = await studentCourseAPI.submitAssignment(user.user_id, submittingFor, submitUrl.trim());
+      if (response.success) {
+        alert('Submission successful!');
+        setSubmittingFor(null);
+        setSubmitUrl('');
+        if (selectedActiveCourse) loadAssignments(selectedActiveCourse);
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to submit');
+    }
+  };
+
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
@@ -157,9 +194,8 @@ function StudentDashboard({ user, onLogout }) {
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
         <a href="#profile" onClick={() => setActiveTab('profile')}>Personal Info</a>
         <a href="#enrolled" onClick={() => setActiveTab('enrolled')}>All Enrolled Courses</a>
-        <a href="#active" onClick={() => setActiveTab('active')}>Active Courses</a>
+        <a href="#active" onClick={() => { setActiveTab('active'); setSelectedActiveCourse(null); }}>Active Courses</a>
         <a href="#completed" onClick={() => setActiveTab('completed')}>Completed Courses</a>
-        <a href="#content" onClick={() => setActiveTab('content')}>Course Content</a>
         <a href="#browse" onClick={() => setActiveTab('browse')}>Browse Courses</a>
         <a href="#logout" onClick={onLogout}>Logout</a>
       </div>
@@ -234,66 +270,28 @@ function StudentDashboard({ user, onLogout }) {
                   ) : (
                     <form onSubmit={handleUpdateProfile}>
                       <div className="form-group">
-                        <label>Name (Cannot be changed)</label>
-                        <input
-                          type="text"
-                          className="input"
-                          value={profile.name}
-                          disabled
-                        />
+                        <label>Name</label>
+                        <input type="text" name="name" className="input" value={editForm.name || ''} onChange={handleEditChange} placeholder="Your name" required />
                       </div>
                       <div className="form-group">
                         <label>Email (Cannot be changed)</label>
-                        <input
-                          type="email"
-                          className="input"
-                          value={profile.email}
-                          disabled
-                        />
+                        <input type="email" className="input" value={profile.email} disabled />
                       </div>
                       <div className="form-group">
-                        <label>Branch (Cannot be changed)</label>
-                        <input
-                          type="text"
-                          name="branch"
-                          className="input"
-                          value={editForm.branch || ''}
-                          disabled
-                          placeholder="e.g., Computer Science"
-                        />
+                        <label>Branch</label>
+                        <input type="text" name="branch" className="input" value={editForm.branch || ''} onChange={handleEditChange} placeholder="e.g., Computer Science" />
                       </div>
                       <div className="form-group">
-                        <label>Country (Cannot be changed)</label>
-                        <input
-                          type="text"
-                          name="country"
-                          className="input"
-                          value={editForm.country || ''}
-                          disabled
-                          placeholder="e.g., India"
-                        />
+                        <label>Country</label>
+                        <input type="text" name="country" className="input" value={editForm.country || ''} onChange={handleEditChange} placeholder="e.g., India" />
                       </div>
                       <div className="form-group">
-                        <label>Date of Birth (Cannot be changed)</label>
-                        <input
-                          type="date"
-                          name="dob"
-                          className="input"
-                          value={editForm.dob || ''}
-                          disabled
-                        />
+                        <label>Date of Birth</label>
+                        <input type="date" name="dob" className="input" value={editForm.dob || ''} onChange={handleEditChange} />
                       </div>
                       <div className="form-group">
                         <label>Phone Number</label>
-                        <input
-                          type="tel"
-                          name="phone_number"
-                          className="input"
-                          value={editForm.phone_number}
-                          onChange={handleEditChange}
-                          placeholder="e.g., +1234567890"
-                          required
-                        />
+                        <input type="tel" name="phone_number" className="input" value={editForm.phone_number} onChange={handleEditChange} placeholder="e.g., +1234567890" />
                       </div>
                       <div style={{ display: 'flex', gap: '10px' }}>
                         <button type="submit" className="btn btn-primary">
@@ -362,27 +360,93 @@ function StudentDashboard({ user, onLogout }) {
               <h2>Active Courses</h2>
               {activeCourses.length === 0 ? (
                 <p>You don't have any active courses.</p>
+              ) : !selectedActiveCourse ? (
+                <div className="courses-grid">
+                  {activeCourses.map((course) => (
+                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); }}>
+                      <h3>{course.title}</h3>
+                      <p className="course-level">{course.level}</p>
+                      <p className="course-duration">Duration: {course.duration}</p>
+                      <p className="course-action-hint">Click to view content, assignments & marks</p>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Course</th>
-                      <th>Duration</th>
-                      <th>Level</th>
-                      <th>Enrolled Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeCourses.map((course) => (
-                      <tr key={course.course_id}>
-                        <td>{course.title}</td>
-                        <td>{course.duration}</td>
-                        <td>{course.level}</td>
-                        <td>{course.enroll_date}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="student-course-view">
+                  <div className="student-course-header">
+                    <h3>{activeCourses.find(c => c.course_id === selectedActiveCourse)?.title}</h3>
+                    <button className="btn btn-secondary" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); }}>← Back to Courses</button>
+                  </div>
+
+                  <div className="student-course-section">
+                    <h3>Course Content</h3>
+                    {courseModules.length === 0 ? (
+                      <p style={{ color: '#666', margin: 0 }}>No modules available for this course yet.</p>
+                    ) : (
+                      courseModules.map((module) => (
+                        <div key={module.module_number} className="student-module-block">
+                          <h4>Module {module.module_number}: {module.name}</h4>
+                          {module.duration && <p style={{ color: '#666', fontSize: '13px', margin: '0 0 8px 0' }}>Duration: {module.duration}</p>}
+                          {module.content.length === 0 ? (
+                            <p style={{ color: '#999', fontStyle: 'italic', margin: 0, fontSize: '14px' }}>No content in this module.</p>
+                          ) : (
+                            module.content.map((content) => (
+                              <div key={content.content_id} className="student-content-item">
+                                <span><strong>{content.title}</strong><span className="content-type-badge">{content.type}</span></span>
+                                <a href={content.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm">View</a>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="student-course-section">
+                    <h3>Assignments</h3>
+                    {assignments.length === 0 ? (
+                      <p style={{ color: '#666', margin: 0 }}>No assignments for this course yet.</p>
+                    ) : (
+                      <>
+                        {assignments.map((a) => (
+                          <div key={a.assignment_id} className="student-assignment-block">
+                            <h4>{a.title}</h4>
+                            {a.description && <p style={{ color: '#666', fontSize: '14px', margin: '0 0 8px 0' }}>{a.description}</p>}
+                            <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}><strong>Max Marks:</strong> {a.max_marks}{a.due_date && <> · <strong>Due:</strong> {new Date(a.due_date).toLocaleString()}</>}</p>
+                            <div className="student-assignment-actions">
+                              <a href={a.assignment_url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">View Assignment</a>
+                              {submittingFor === a.assignment_id ? (
+                                <form onSubmit={handleSubmitAssignment} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                  <input type="url" className="input" value={submitUrl} onChange={(e) => setSubmitUrl(e.target.value)} placeholder="Paste your solution URL" required style={{ flex: '1', minWidth: '200px' }} />
+                                  <button type="submit" className="btn btn-primary">Submit</button>
+                                  <button type="button" className="btn btn-secondary" onClick={() => { setSubmittingFor(null); setSubmitUrl(''); }}>Cancel</button>
+                                </form>
+                              ) : (
+                                a.submission_url ? (
+                                  <span style={{ fontSize: '14px' }}>
+                                    Submitted: <a href={a.submission_url} target="_blank" rel="noopener noreferrer">View</a>
+                                    {a.marks_obtained != null && ` · Marks: ${a.marks_obtained}/${a.max_marks}`}
+                                    {a.feedback && ` · Feedback: ${a.feedback}`}
+                                  </span>
+                                ) : (
+                                  <button className="btn btn-secondary" onClick={() => setSubmittingFor(a.assignment_id)}>Submit Solution Link</button>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        <div className="student-total-marks">
+                          Total Marks: {(() => {
+                            const totalObtained = assignments.reduce((s, a) => s + (a.marks_obtained ?? 0), 0);
+                            const totalPossible = assignments.reduce((s, a) => s + (a.max_marks || 0), 0);
+                            const percent = totalPossible > 0 ? Math.round(totalObtained / totalPossible * 100) : 0;
+                            return `${totalObtained}/${totalPossible} (${percent}%)`;
+                          })()}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -419,108 +483,6 @@ function StudentDashboard({ user, onLogout }) {
                     ))}
                   </tbody>
                 </table>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'content' && (
-            <div>
-              <h2>Course Content</h2>
-              
-              {!selectedCourseForContent && (
-                <div className="card">
-                  <p>Select a course to view its modules and content:</p>
-                  <select
-                    className="input"
-                    value={selectedCourseForContent || ''}
-                    onChange={(e) => {
-                      setSelectedCourseForContent(e.target.value);
-                      if (e.target.value) {
-                        loadCourseContent(e.target.value);
-                      }
-                    }}
-                    style={{ marginTop: '10px' }}
-                  >
-                    <option value="">Select a course</option>
-                    {allEnrolledCourses.map((course) => (
-                      <option key={course.course_id} value={course.course_id}>
-                        {course.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {selectedCourseForContent && (
-                <>
-                  <div className="card" style={{ marginBottom: '20px' }}>
-                    <h3>
-                      {allEnrolledCourses.find(c => c.course_id === selectedCourseForContent)?.title}
-                    </h3>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => {
-                        setSelectedCourseForContent(null);
-                        setCourseModules([]);
-                      }}
-                      style={{ marginTop: '10px', width: 'auto' }}
-                    >
-                      Change Course
-                    </button>
-                  </div>
-
-                  {courseModules.length === 0 ? (
-                    <div className="card">
-                      <p>No modules available for this course yet.</p>
-                    </div>
-                  ) : (
-                    <div>
-                      {courseModules.map((module) => (
-                        <div key={module.module_number} className="card" style={{ marginBottom: '20px' }}>
-                          <h3>
-                            Module {module.module_number}: {module.name}
-                          </h3>
-                          {module.duration && (
-                            <p style={{ color: '#666', marginBottom: '15px' }}>
-                              Duration: {module.duration}
-                            </p>
-                          )}
-                          
-                          {module.content.length === 0 ? (
-                            <p style={{ color: '#999', fontStyle: 'italic' }}>
-                              No content available in this module yet.
-                            </p>
-                          ) : (
-                            <div>
-                              <h4 style={{ marginBottom: '10px', fontSize: '16px' }}>Content:</h4>
-                              <div className="content-list">
-                                {module.content.map((content) => (
-                                  <div key={content.content_id} className="content-item">
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      <div>
-                                        <strong>{content.title}</strong>
-                                        <span className="content-type-badge">{content.type}</span>
-                                      </div>
-                                      <a
-                                        href={content.url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="btn btn-primary"
-                                        style={{ padding: '6px 12px', width: 'auto', textDecoration: 'none' }}
-                                      >
-                                        View
-                                      </a>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </>
               )}
             </div>
           )}

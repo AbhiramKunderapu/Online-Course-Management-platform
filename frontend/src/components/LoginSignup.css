@@ -86,3 +86,13 @@
   font-size: 14px;
   border: 1px solid #fcc;
 }
+
+.success-message {
+  background: #efe;
+  color: #2a7;
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  border: 1px solid #cfc;
+}

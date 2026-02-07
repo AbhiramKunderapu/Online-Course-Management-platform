@@ -11,6 +11,7 @@ function LoginSignup({ onLogin }) {
     role: 'student',
   });
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
@@ -24,11 +25,11 @@ function LoginSignup({ onLogin }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
 
     try {
       if (isLogin) {
-        // Login
         const response = await authAPI.login(formData.email, formData.password);
         if (response.success && response.user) {
           onLogin(response.user);
@@ -36,16 +37,18 @@ function LoginSignup({ onLogin }) {
           setError(response.error || 'Login failed');
         }
       } else {
-        // Signup
         const response = await authAPI.signup(
           formData.name,
           formData.email,
           formData.password,
           formData.role
         );
-        if (response.success && response.user) {
-          // Auto login after signup
-          onLogin(response.user);
+        if (response.success) {
+          if (response.user) {
+            onLogin(response.user);
+          } else {
+            setSuccess(response.message || 'Account created. Please wait for admin approval before logging in.');
+          }
         } else {
           setError(response.error || 'Signup failed');
         }
@@ -140,6 +143,7 @@ function LoginSignup({ onLogin }) {
           )}
 
           {error && <div className="error-message">{error}</div>}
+          {success && <div className="success-message">{success}</div>}
 
           <button type="submit" className="btn btn-primary" disabled={loading}>
             {loading ? 'Please wait...' : isLogin ? 'Login' : 'Sign Up'}

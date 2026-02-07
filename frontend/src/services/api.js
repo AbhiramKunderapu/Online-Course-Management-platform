@@ -99,10 +99,25 @@ export const adminAPI = {
     const response = await api.get('/admin/instructors');
     return response.data;
   },
+
+  approveUser: async (user_id) => {
+    const response = await api.post('/admin/approve', { user_id });
+    return response.data;
+  },
 };
 
 // Instructor API
 export const instructorAPI = {
+  getProfile: async (user_id) => {
+    const response = await api.get('/instructor/profile', { params: { user_id } });
+    return response.data;
+  },
+
+  updateProfile: async (user_id, profileData) => {
+    const response = await api.put('/instructor/profile', { user_id, ...profileData });
+    return response.data;
+  },
+
   getCourses: async (instructor_id) => {
     const response = await api.get('/instructor/courses', {
       params: { instructor_id },
@@ -166,6 +181,44 @@ export const instructorAPI = {
     });
     return response.data;
   },
+
+  createAssignment: async (instructor_id, course_id, title, assignment_url, options = {}) => {
+    const response = await api.post('/instructor/assignment', {
+      instructor_id,
+      course_id,
+      title,
+      assignment_url,
+      module_number: options.module_number,
+      description: options.description,
+      due_date: options.due_date,
+      max_marks: options.max_marks ?? 20,
+    });
+    return response.data;
+  },
+
+  getCourseAssignments: async (instructor_id, course_id) => {
+    const response = await api.get(`/instructor/courses/${course_id}/assignments`, {
+      params: { instructor_id },
+    });
+    return response.data;
+  },
+
+  getAssignmentSubmissions: async (instructor_id, assignment_id) => {
+    const response = await api.get(`/instructor/assignments/${assignment_id}/submissions`, {
+      params: { instructor_id },
+    });
+    return response.data;
+  },
+
+  gradeSubmission: async (instructor_id, submission_id, marks_obtained, feedback = '') => {
+    const response = await api.post('/instructor/submission/grade', {
+      instructor_id,
+      submission_id,
+      marks_obtained,
+      feedback,
+    });
+    return response.data;
+  },
 };
 
 // Student Course Content API
@@ -174,6 +227,38 @@ export const studentCourseAPI = {
     const response = await api.get(`/student/courses/${course_id}/modules`, {
       params: { user_id },
     });
+    return response.data;
+  },
+
+  getCourseAssignments: async (user_id, course_id) => {
+    const response = await api.get(`/student/courses/${course_id}/assignments`, {
+      params: { user_id },
+    });
+    return response.data;
+  },
+
+  submitAssignment: async (student_id, assignment_id, submission_url) => {
+    const response = await api.post('/student/assignment/submit', {
+      student_id,
+      assignment_id,
+      submission_url,
+    });
+    return response.data;
+  },
+};
+
+// Analyst API
+export const analystAPI = {
+  getOverview: async () => {
+    const response = await api.get('/analyst/overview');
+    return response.data;
+  },
+  getCourses: async () => {
+    const response = await api.get('/analyst/courses');
+    return response.data;
+  },
+  getInsights: async () => {
+    const response = await api.get('/analyst/insights');
     return response.data;
   },
 };

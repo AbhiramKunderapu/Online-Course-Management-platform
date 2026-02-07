@@ -18,6 +18,7 @@ create table public.users (
     role text check (
         role in ('student','instructor','administrator','data_analyst')
     ) not null,
+    approved boolean default false,
     created_at timestamp default now()
 );
 
