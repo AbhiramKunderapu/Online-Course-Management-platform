@@ -306,6 +306,13 @@ export const studentCourseAPI = {
     });
     return response.data;
   },
+
+  getCourseInsights: async (user_id, course_id) => {
+    const response = await api.get(`/student/courses/${course_id}/insights`, {
+      params: { user_id },
+    });
+    return response.data;
+  },
 };
 
 // Analyst API
@@ -320,6 +327,32 @@ export const analystAPI = {
   },
   getInsights: async () => {
     const response = await api.get('/analyst/insights');
+    return response.data;
+  },
+  getKPIs: async () => {
+    const response = await api.get('/analyst/kpis');
+    return response.data;
+  },
+  getChartBuilderData: async (groupBy, metric, courseId = null) => {
+    const params = { group_by: groupBy, metric };
+    if (courseId) params.course_id = courseId;
+    const response = await api.get('/analyst/chart-builder', { params });
+    return response.data;
+  },
+  getGeographic: async () => {
+    const response = await api.get('/analyst/insights/geographic');
+    return response.data;
+  },
+  getAgeDemographics: async () => {
+    const response = await api.get('/analyst/insights/age-demographics');
+    return response.data;
+  },
+  getHotTopics: async () => {
+    const response = await api.get('/analyst/insights/hot-topics');
+    return response.data;
+  },
+  getInstructorWorkload: async () => {
+    const response = await api.get('/analyst/insights/instructor-workload');
     return response.data;
   },
 };

@@ -2097,6 +2097,265 @@ def analyst_insights():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/analyst/kpis", methods=["GET"])
+def analyst_kpis():
+    """Real-time KPI widgets: total revenue, live enrollment, completion rate, top university."""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COALESCE(SUM(c.fees), 0) FROM public.enrolled_in e
+            JOIN public.course c ON c.course_id = e.course_id
+            WHERE e.status != 'dropped' AND c.fees IS NOT NULL
+        """)
+        total_revenue = float(cur.fetchone()[0] or 0)
+        cur.execute("SELECT COUNT(*) FROM public.enrolled_in WHERE status != 'dropped'")
+        live_enrollment_count = cur.fetchone()[0]
+        cur.execute("""
+            SELECT COUNT(*) FILTER (WHERE status = 'completed') as completed, COUNT(*) as total
+            FROM public.enrolled_in
+        """)
+        row = cur.fetchone()
+        completed, total = row[0] or 0, row[1] or 0
+        completion_rate = round(completed / total * 100, 1) if total > 0 else 0
+        cur.execute("""
+            SELECT u.name, COUNT(DISTINCT e.user_id) as headcount
+            FROM public.university u
+            LEFT JOIN public.course c ON c.university_id = u.university_id
+            LEFT JOIN public.enrolled_in e ON e.course_id = c.course_id AND e.status != 'dropped'
+            GROUP BY u.university_id, u.name
+            ORDER BY headcount DESC NULLS LAST
+            LIMIT 1
+        """)
+        top_row = cur.fetchone()
+        top_performing_university = (top_row[0] or "N/A") if top_row else "N/A"
+        cur.close()
+        conn.close()
+        return jsonify({
+            "success": True,
+            "data": {
+                "total_revenue": total_revenue,
+                "live_enrollment_count": live_enrollment_count,
+                "completion_rate": completion_rate,
+                "top_performing_university": top_performing_university,
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/chart-builder", methods=["GET"])
+def analyst_chart_builder():
+    """Interactive chart: group_by (X), metric (Y). Metrics: total_enrollments, total_revenue, avg_eval_score, course_duration, grade_distribution (count per grade)."""
+    try:
+        group_by = request.args.get("group_by", "course_name")
+        metric = request.args.get("metric", "total_enrollments")
+        course_id = request.args.get("course_id")  # optional: filter by course for grade dist
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        if metric == "grade_distribution":
+            # Students vs grade: count per grade (optionally for one course)
+            if course_id:
+                cur.execute("""
+                    SELECT COALESCE(e.grade, 'No grade') as label, COUNT(*) as value
+                    FROM public.enrolled_in e
+                    WHERE e.course_id = %s::uuid AND e.status != 'dropped'
+                    GROUP BY e.grade
+                    ORDER BY value DESC
+                """, (course_id,))
+            else:
+                cur.execute("""
+                    SELECT COALESCE(e.grade, 'No grade') as label, COUNT(*) as value
+                    FROM public.enrolled_in e
+                    WHERE e.status != 'dropped'
+                    GROUP BY e.grade
+                    ORDER BY value DESC
+                """)
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return jsonify({"success": True, "data": [{"label": str(r[0]), "value": int(r[1])} for r in rows]})
+
+        # Build dynamic query for other metrics
+        group_by_map = {
+            "course_name": ("c.title", "c.title"),
+            "student_country": ("COALESCE(s.country, 'Unknown')", "COALESCE(s.country, 'Unknown')"),
+            "instructor_name": ("COALESCE(u_instr.name, 'Unassigned')", "u_instr.user_id, COALESCE(u_instr.name, 'Unassigned')"),
+            "university_name": ("COALESCE(univ.name, 'N/A')", "univ.university_id, COALESCE(univ.name, 'N/A')"),
+            "student_branch": ("COALESCE(s.branch, 'Unknown')", "COALESCE(s.branch, 'Unknown')"),
+        }
+        age_expr = "CASE WHEN s.dob IS NULL THEN 'Unknown' WHEN EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.dob)) < 20 THEN '<20' WHEN EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.dob)) <= 25 THEN '20-25' WHEN EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.dob)) <= 35 THEN '26-35' ELSE '35+' END"
+        group_by_map["student_age_group"] = (age_expr, age_expr)
+
+        if group_by not in group_by_map:
+            group_by = "course_name"
+        select_group, group_clause = group_by_map[group_by]
+
+        joins = """
+            FROM public.enrolled_in e
+            JOIN public.course c ON c.course_id = e.course_id
+            LEFT JOIN public.student s ON s.user_id = e.user_id
+        """
+        if group_by == "instructor_name":
+            joins += " LEFT JOIN public.teaches t ON t.course_id = c.course_id LEFT JOIN public.users u_instr ON u_instr.user_id = t.instructor_id"
+        if group_by == "university_name":
+            joins += " LEFT JOIN public.university univ ON univ.university_id = c.university_id"
+
+        if metric == "total_enrollments":
+            metric_sql = "COUNT(e.user_id)"
+        elif metric == "total_revenue":
+            metric_sql = "COALESCE(SUM(c.fees), 0)"
+        elif metric == "course_duration":
+            metric_sql = "COALESCE(AVG(NULLIF(REGEXP_REPLACE(c.duration, '[^0-9]', '', 'g'), '')::int), 0)"
+        elif metric == "avg_eval_score":
+            metric_sql = """AVG((SELECT CASE WHEN SUM(a.max_marks) > 0 THEN COALESCE(SUM(sub.marks_obtained), 0)::float / SUM(a.max_marks) * 100 ELSE NULL END FROM public.assignment a LEFT JOIN public.assignment_submission sub ON sub.assignment_id = a.assignment_id AND sub.student_id = e.user_id WHERE a.course_id = e.course_id))"""
+        else:
+            metric_sql = "COUNT(e.user_id)"
+
+        select_list = f"{select_group} as label, {metric_sql} as value"
+        if group_by == "instructor_name":
+            group_by_sql = "GROUP BY u_instr.user_id, COALESCE(u_instr.name, 'Unassigned')"
+        elif group_by == "university_name":
+            group_by_sql = "GROUP BY univ.university_id, COALESCE(univ.name, 'N/A')"
+        else:
+            group_by_sql = f"GROUP BY {group_clause}"
+        q = f"SELECT {select_list} {joins} WHERE e.status != 'dropped' {group_by_sql} ORDER BY value DESC"
+        cur.execute(q)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        out = [{"label": str(r[0]) if r[0] is not None else "Unknown", "value": float(r[1]) if r[1] is not None and metric in ("total_revenue", "avg_eval_score", "course_duration") else (int(r[1]) if r[1] is not None else 0)} for r in rows]
+        return jsonify({"success": True, "data": out})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/insights/geographic", methods=["GET"])
+def analyst_insights_geographic():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COALESCE(s.country, 'Unknown') as name, COUNT(DISTINCT e.user_id) as value
+            FROM public.enrolled_in e JOIN public.student s ON s.user_id = e.user_id
+            WHERE e.status != 'dropped'
+            GROUP BY s.country ORDER BY value DESC
+        """)
+        data = [{"name": row[0], "value": row[1]} for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/insights/age-demographics", methods=["GET"])
+def analyst_insights_age_demographics():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        age_expr = "CASE WHEN s.dob IS NULL THEN 'Unknown' WHEN EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.dob)) < 20 THEN '<20' WHEN EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.dob)) <= 25 THEN '20-25' WHEN EXTRACT(YEAR FROM AGE(CURRENT_DATE, s.dob)) <= 35 THEN '26-35' ELSE '35+' END"
+        cur.execute(f"""
+            SELECT {age_expr} as age_group, COUNT(DISTINCT s.user_id) as count
+            FROM public.student s
+            WHERE s.user_id IN (SELECT user_id FROM public.enrolled_in WHERE status != 'dropped')
+            GROUP BY {age_expr}
+            ORDER BY CASE {age_expr} WHEN '<20' THEN 1 WHEN '20-25' THEN 2 WHEN '26-35' THEN 3 WHEN '35+' THEN 4 ELSE 5 END
+        """)
+        data = [{"age_group": row[0], "count": row[1]} for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/insights/hot-topics", methods=["GET"])
+def analyst_insights_hot_topics():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT c.title, COUNT(e.user_id) as enrollments
+            FROM public.course c
+            LEFT JOIN public.enrolled_in e ON e.course_id = c.course_id AND e.status != 'dropped'
+            GROUP BY c.course_id, c.title ORDER BY enrollments DESC LIMIT 5
+        """)
+        data = [{"title": row[0], "enrollments": row[1]} for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/insights/instructor-workload", methods=["GET"])
+def analyst_insights_instructor_workload():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT u.name, COUNT(t.course_id) as course_count
+            FROM public.users u JOIN public.instructor i ON i.user_id = u.user_id
+            LEFT JOIN public.teaches t ON t.instructor_id = u.user_id
+            GROUP BY u.user_id, u.name ORDER BY course_count DESC
+        """)
+        data = [{"name": row[0], "course_count": row[1]} for row in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "data": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/student/courses/<course_id>/insights", methods=["GET"])
+def student_course_insights(course_id):
+    """Course insights for enrolled students: grade distribution, completion rate, class stats."""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM public.enrolled_in WHERE user_id = %s AND course_id = %s::uuid AND status != 'dropped'", (user_id, course_id))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Not enrolled in this course"}), 403
+        cur.execute("""
+            SELECT COALESCE(grade, 'No grade') as grade, COUNT(*) as count
+            FROM public.enrolled_in WHERE course_id = %s::uuid AND status != 'dropped'
+            GROUP BY grade ORDER BY count DESC
+        """, (course_id,))
+        grade_distribution = [{"grade": row[0], "count": row[1]} for row in cur.fetchall()]
+        cur.execute("""
+            SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'completed')
+            FROM public.enrolled_in WHERE course_id = %s::uuid AND status != 'dropped'
+        """, (course_id,))
+        total, completed = cur.fetchone()
+        completion_rate = round(completed / total * 100, 1) if total and total > 0 else 0
+        cur.execute("SELECT title FROM public.course WHERE course_id = %s::uuid", (course_id,))
+        row = cur.fetchone()
+        course_title = row[0] if row else "Course"
+        cur.close()
+        conn.close()
+        return jsonify({
+            "success": True,
+            "data": {
+                "course_id": course_id,
+                "course_title": course_title,
+                "grade_distribution": grade_distribution,
+                "total_enrolled": total or 0,
+                "completed_count": completed or 0,
+                "completion_rate": completion_rate,
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # =============================
 # HEALTH CHECK
 # =============================
