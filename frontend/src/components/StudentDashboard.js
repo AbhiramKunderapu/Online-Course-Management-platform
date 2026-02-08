@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { dashboardAPI, coursesAPI, studentAPI, studentCourseAPI } from '../services/api';
 import './Dashboard.css';
 
@@ -20,7 +19,6 @@ function StudentDashboard({ user, onLogout }) {
   const [submittingFor, setSubmittingFor] = useState(null);
   const [submitUrl, setSubmitUrl] = useState('');
   const [announcements, setAnnouncements] = useState([]);
-  const [courseInsights, setCourseInsights] = useState(null);
   const [browseSearch, setBrowseSearch] = useState('');
   const [browseLevelFilter, setBrowseLevelFilter] = useState('all');
 
@@ -169,17 +167,6 @@ function StudentDashboard({ user, onLogout }) {
     } catch (error) {
       console.error('Error loading assignments:', error);
       alert(error.response?.data?.error || 'Failed to load assignments');
-    }
-  };
-
-  const loadCourseInsights = async (courseId) => {
-    try {
-      const response = await studentCourseAPI.getCourseInsights(user.user_id, courseId);
-      if (response.success && response.data) setCourseInsights(response.data);
-      else setCourseInsights(null);
-    } catch (error) {
-      console.error('Error loading course insights:', error);
-      setCourseInsights(null);
     }
   };
 
@@ -393,7 +380,7 @@ function StudentDashboard({ user, onLogout }) {
               ) : !selectedActiveCourse ? (
                 <div className="courses-grid">
                   {activeCourses.map((course) => (
-                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); loadAnnouncements(course.course_id); loadCourseInsights(course.course_id); }}>
+                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); loadAnnouncements(course.course_id); }}>
                       <h3>{course.title}</h3>
                       {course.university_name && (
                         <p className="course-meta">Offered by: {course.university_name}{course.university_ranking != null ? ` (Rank #${course.university_ranking})` : ''}</p>
@@ -408,20 +395,18 @@ function StudentDashboard({ user, onLogout }) {
               ) : (
                 <div className="student-course-view">
                   <div className="student-course-header">
-                    <div className="student-course-header-info">
-                      <h3>{activeCourses.find(c => c.course_id === selectedActiveCourse)?.title}</h3>
-                      {(() => {
-                        const c = activeCourses.find(c => c.course_id === selectedActiveCourse);
-                        return (c?.university_name || c?.instructor_names) ? (
-                          <p className="student-course-header-meta">
-                            {c?.university_name && <>Offered by: {c.university_name}{c?.university_ranking != null ? ` (Rank #${c.university_ranking})` : ''}</>}
-                            {c?.university_name && c?.instructor_names && ' · '}
-                            {c?.instructor_names && <>Taught by: {c.instructor_names}</>}
-                          </p>
-                        ) : null;
-                      })()}
-                    </div>
-                    <button className="btn btn-secondary student-course-back-btn" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); setAnnouncements([]); setCourseInsights(null); }}>← Back to Courses</button>
+                    <h3>{activeCourses.find(c => c.course_id === selectedActiveCourse)?.title}</h3>
+                    {(() => {
+                      const c = activeCourses.find(c => c.course_id === selectedActiveCourse);
+                      return (c?.university_name || c?.instructor_names) ? (
+                        <p className="course-meta" style={{ marginTop: '4px' }}>
+                          {c?.university_name && <>Offered by: {c.university_name}{c?.university_ranking != null ? ` (Rank #${c.university_ranking})` : ''}</>}
+                          {c?.university_name && c?.instructor_names && ' · '}
+                          {c?.instructor_names && <>Taught by: {c.instructor_names}</>}
+                        </p>
+                      ) : null;
+                    })()}
+                    <button className="btn btn-secondary" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); setAnnouncements([]); }}>← Back to Courses</button>
                   </div>
 
                   <div className="student-course-section">
@@ -456,7 +441,7 @@ function StudentDashboard({ user, onLogout }) {
                             module.content.map((content) => (
                               <div key={content.content_id} className="student-content-item">
                                 <span><strong>{content.title}</strong><span className="content-type-badge">{content.type}</span></span>
-                                <a href={content.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-content-view">View</a>
+                                <a href={content.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm">View</a>
                               </div>
                             ))
                           )}
@@ -511,33 +496,6 @@ function StudentDashboard({ user, onLogout }) {
                       </>
                     )}
                   </div>
-
-                  {courseInsights && (
-                    <div className="student-course-section student-course-insights">
-                      <h3>Course Insights</h3>
-                      <p className="insight-desc">Class stats and grade distribution for this course.</p>
-                      <div className="course-insights-stats">
-                        <span className="insight-stat">Enrolled: <strong>{courseInsights.total_enrolled}</strong></span>
-                        <span className="insight-stat">Completed: <strong>{courseInsights.completed_count}</strong></span>
-                        <span className="insight-stat">Completion rate: <strong>{courseInsights.completion_rate}%</strong></span>
-                      </div>
-                      {courseInsights.grade_distribution && courseInsights.grade_distribution.length > 0 ? (
-                        <div className="course-insights-chart">
-                          <h4>Grade distribution</h4>
-                          <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={courseInsights.grade_distribution} margin={{ top: 10, right: 10, left: 0, bottom: 24 }}>
-                              <XAxis dataKey="grade" />
-                              <YAxis />
-                              <Tooltip />
-                              <Bar dataKey="count" fill="#0ea5e9" radius={[4, 4, 0, 0]} name="Students" />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      ) : (
-                        <p className="empty-chart-msg">No grade data for this course yet.</p>
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
