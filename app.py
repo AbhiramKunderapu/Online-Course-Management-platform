@@ -1113,6 +1113,98 @@ def get_course_modules(course_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/instructor/courses/<course_id>/announcements", methods=["GET"])
+def get_instructor_announcements(course_id):
+    """Get all announcements for a course (instructor)"""
+    try:
+        instructor_id = request.args.get("instructor_id")
+        if not instructor_id:
+            return jsonify({"error": "instructor_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM public.teaches
+            WHERE instructor_id = %s AND course_id = %s
+        """, (instructor_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You don't teach this course"}), 403
+
+        cur.execute("""
+            SELECT announcement_id, course_id, instructor_id, title, content, created_at
+            FROM public.announcement
+            WHERE course_id = %s
+            ORDER BY created_at DESC
+        """, (course_id,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        announcements = []
+        for row in rows:
+            announcements.append({
+                "announcement_id": str(row[0]),
+                "course_id": str(row[1]),
+                "instructor_id": str(row[2]),
+                "title": row[3],
+                "content": row[4],
+                "created_at": str(row[5]) if row[5] else None
+            })
+        return jsonify({"success": True, "announcements": announcements})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/instructor/announcement", methods=["POST"])
+def create_announcement():
+    """Create announcement for a course (instructor only)"""
+    try:
+        data = request.get_json()
+        instructor_id = data.get("instructor_id")
+        course_id = data.get("course_id")
+        title = data.get("title")
+        content = data.get("content", "")
+
+        if not all([instructor_id, course_id, title]):
+            return jsonify({"error": "instructor_id, course_id, and title are required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM public.teaches
+            WHERE instructor_id = %s AND course_id = %s
+        """, (instructor_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You don't teach this course"}), 403
+
+        cur.execute("""
+            INSERT INTO public.announcement (course_id, instructor_id, title, content)
+            VALUES (%s::uuid, %s::uuid, %s, %s)
+            RETURNING announcement_id, title, content, created_at
+        """, (course_id, instructor_id, title, content))
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Announcement created successfully",
+            "announcement": {
+                "announcement_id": str(row[0]),
+                "title": row[1],
+                "content": row[2],
+                "created_at": str(row[3]) if row[3] else None
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/instructor/module", methods=["POST"])
 def create_module():
     """Create a new module for a course (instructor only)"""
@@ -1641,6 +1733,48 @@ def get_student_course_modules(course_id):
 
         return jsonify({"success": True, "modules": modules_list})
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/student/courses/<course_id>/announcements", methods=["GET"])
+def get_student_announcements(course_id):
+    """Get announcements for a course (student - enrolled only)"""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM public.enrolled_in
+            WHERE user_id = %s AND course_id = %s AND status != 'dropped'
+        """, (user_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You are not enrolled in this course"}), 403
+
+        cur.execute("""
+            SELECT announcement_id, title, content, created_at
+            FROM public.announcement
+            WHERE course_id = %s
+            ORDER BY created_at DESC
+        """, (course_id,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        announcements = []
+        for row in rows:
+            announcements.append({
+                "announcement_id": str(row[0]),
+                "title": row[1],
+                "content": row[2],
+                "created_at": str(row[3]) if row[3] else None
+            })
+        return jsonify({"success": True, "announcements": announcements})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

@@ -21,6 +21,8 @@ function InstructorDashboard({ user, onLogout }) {
   const [profile, setProfile] = useState(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editForm, setEditForm] = useState({});
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', content: '' });
 
   useEffect(() => {
     loadDashboardData();
@@ -106,10 +108,22 @@ function InstructorDashboard({ user, onLogout }) {
     }
   };
 
+  const loadAnnouncements = async (courseId) => {
+    try {
+      const response = await instructorAPI.getAnnouncements(user.user_id, courseId);
+      if (response.success) {
+        setAnnouncements(response.announcements);
+      }
+    } catch (error) {
+      console.error('Error loading announcements:', error);
+    }
+  };
+
   const handleSelectCourse = (courseId) => {
     setSelectedCourse(courseId);
     loadCourseStudents(courseId);
     loadCourseModules(courseId);
+    loadAnnouncements(courseId);
   };
 
   const handleGradeStudent = async (e) => {
@@ -270,6 +284,65 @@ function InstructorDashboard({ user, onLogout }) {
     }
   };
 
+  const handleCreateAnnouncement = async (e) => {
+    e.preventDefault();
+    if (!selectedCourse || !announcementForm.title.trim()) return;
+    try {
+      const response = await instructorAPI.createAnnouncement(user.user_id, selectedCourse, announcementForm.title.trim(), announcementForm.content.trim());
+      if (response.success) {
+        alert('Announcement posted!');
+        setAnnouncementForm({ title: '', content: '' });
+        loadAnnouncements(selectedCourse);
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to create announcement');
+    }
+  };
+
+  // const handleEmailAllStudents = () => {
+  //   if (students.length === 0) {
+  //     alert('No students enrolled in this course.');
+  //     return;
+  //   }
+  //   const emails = students.map((s) => s.email).filter(Boolean);
+  //   if (emails.length === 0) {
+  //     alert('No student emails available.');
+  //     return;
+  //   }
+  //   const bcc = emails.join(',');
+  //   const courseTitle = courses.find((c) => c.course_id === selectedCourse)?.title || 'Course';
+  //   const subject = encodeURIComponent(`CourseHub: ${courseTitle} - Announcement`);
+  //   const mailtoUrl = `mailto:?bcc=${bcc}&subject=${subject}`;
+  //   window.location.href = mailtoUrl;
+  // };
+
+  const handleEmailAllStudents = () => {
+    if (!students.length) {
+      alert('No students enrolled in this course.');
+      return;
+    }
+  
+    const emails = students.map(s => s.email).filter(Boolean);
+    if (!emails.length) {
+      alert('No student emails available.');
+      return;
+    }
+  
+    const bcc = encodeURIComponent(emails.join(','));
+  
+    const courseTitle =
+      courses.find(c => c.course_id === selectedCourse)?.title || 'Course';
+  
+    const subject = encodeURIComponent(
+      `CourseHub: ${courseTitle} - Announcement`
+    );
+  
+    const gmailUrl = `https://mail.google.com/mail/?view=cm&bcc=${bcc}&su=${subject}`;
+  
+    window.open(gmailUrl, '_blank');
+  };
+  
+
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
@@ -352,7 +425,7 @@ function InstructorDashboard({ user, onLogout }) {
               ) : !selectedCourse ? (
                 <div className="courses-grid">
                   {courses.map((course) => (
-                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { handleSelectCourse(course.course_id); loadAssignments(course.course_id); setCourseActionTab('modules'); }}>
+                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { handleSelectCourse(course.course_id); loadAssignments(course.course_id); setCourseActionTab('announcements'); }}>
                       <h3>{course.title}</h3>
                       <p className="course-level">{course.level}</p>
                       <p className="course-duration">Duration: {course.duration}</p>
@@ -370,15 +443,50 @@ function InstructorDashboard({ user, onLogout }) {
                 <div className="course-management-view">
                   <div className="course-header-bar">
                     <h3>{courses.find(c => c.course_id === selectedCourse)?.title}</h3>
-                    <button className="btn btn-secondary" onClick={() => { setSelectedCourse(null); setStudents([]); setModules([]); setAssignments([]); setSelectedAssignment(null); setSubmissions([]); }}>← Back to Courses</button>
+                    <button className="btn btn-secondary" onClick={() => { setSelectedCourse(null); setStudents([]); setModules([]); setAssignments([]); setSelectedAssignment(null); setSubmissions([]); setAnnouncements([]); }}>← Back to Courses</button>
                   </div>
                   <div className="course-action-tabs">
+                    <button className={courseActionTab === 'announcements' ? 'active' : ''} onClick={() => setCourseActionTab('announcements')}>Announcements</button>
                     <button className={courseActionTab === 'modules' ? 'active' : ''} onClick={() => setCourseActionTab('modules')}>Create Module</button>
                     <button className={courseActionTab === 'content' ? 'active' : ''} onClick={() => setCourseActionTab('content')}>Add Content</button>
                     <button className={courseActionTab === 'assignments' ? 'active' : ''} onClick={() => setCourseActionTab('assignments')}>Assignments</button>
                     <button className={courseActionTab === 'students' ? 'active' : ''} onClick={() => setCourseActionTab('students')}>Manage Students</button>
                   </div>
                   <div className="course-action-content">
+                    {courseActionTab === 'announcements' && (
+                      <div>
+                        <div className="card">
+                          <h3>Post Announcement</h3>
+                          <form onSubmit={handleCreateAnnouncement}>
+                            <div className="form-group">
+                              <label>Title</label>
+                              <input type="text" className="input" value={announcementForm.title} onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })} placeholder="e.g., Assignment due date reminder" required />
+                            </div>
+                            <div className="form-group">
+                              <label>Content</label>
+                              <textarea className="input" rows="4" value={announcementForm.content} onChange={(e) => setAnnouncementForm({ ...announcementForm, content: e.target.value })} placeholder="Write your announcement..." />
+                            </div>
+                            <button type="submit" className="btn btn-primary">Post Announcement</button>
+                          </form>
+                        </div>
+                        <div className="card">
+                          <h3>Recent Announcements</h3>
+                          {announcements.length === 0 ? (
+                            <p>No announcements yet. Post one above!</p>
+                          ) : (
+                            <div className="announcements-list">
+                              {announcements.map((a) => (
+                                <div key={a.announcement_id} className="announcement-item">
+                                  <h4>{a.title}</h4>
+                                  {a.content && <p>{a.content}</p>}
+                                  <span className="announcement-date">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                     {courseActionTab === 'modules' && (
                       <div className="card">
                         <h3>Create Module</h3>
@@ -515,7 +623,12 @@ function InstructorDashboard({ user, onLogout }) {
                     {courseActionTab === 'students' && (
                       <div>
                         <div className="card">
-                          <h3>Enrolled Students</h3>
+                          <div className="card-header-with-action">
+                            <h3>Enrolled Students</h3>
+                            <button type="button" className="btn btn-primary btn-sm btn-email-all" onClick={handleEmailAllStudents} disabled={students.length === 0} title="Opens your email client with all student emails in BCC">
+                              📧 Email All Students
+                            </button>
+                          </div>
                           {students.length === 0 ? <p>No students enrolled.</p> : (
                             <table className="table">
                               <thead><tr><th>Name</th><th>Email</th><th>Assignment %</th><th>Status</th><th>Grade</th><th>Actions</th></tr></thead>

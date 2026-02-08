@@ -235,6 +235,23 @@ export const instructorAPI = {
     });
     return response.data;
   },
+
+  getAnnouncements: async (instructor_id, course_id) => {
+    const response = await api.get(`/instructor/courses/${course_id}/announcements`, {
+      params: { instructor_id },
+    });
+    return response.data;
+  },
+
+  createAnnouncement: async (instructor_id, course_id, title, content = '') => {
+    const response = await api.post('/instructor/announcement', {
+      instructor_id,
+      course_id,
+      title,
+      content,
+    });
+    return response.data;
+  },
 };
 
 // Student Course Content API
@@ -258,6 +275,13 @@ export const studentCourseAPI = {
       student_id,
       assignment_id,
       submission_url,
+    });
+    return response.data;
+  },
+
+  getAnnouncements: async (user_id, course_id) => {
+    const response = await api.get(`/student/courses/${course_id}/announcements`, {
+      params: { user_id },
     });
     return response.data;
   },

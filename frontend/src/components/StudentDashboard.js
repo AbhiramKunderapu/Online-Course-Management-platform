@@ -18,6 +18,7 @@ function StudentDashboard({ user, onLogout }) {
   const [assignments, setAssignments] = useState([]);
   const [submittingFor, setSubmittingFor] = useState(null);
   const [submitUrl, setSubmitUrl] = useState('');
+  const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
     loadDashboardData();
@@ -164,6 +165,16 @@ function StudentDashboard({ user, onLogout }) {
     } catch (error) {
       console.error('Error loading assignments:', error);
       alert(error.response?.data?.error || 'Failed to load assignments');
+    }
+  };
+
+  const loadAnnouncements = async (courseId) => {
+    try {
+      const response = await studentCourseAPI.getAnnouncements(user.user_id, courseId);
+      if (response.success) setAnnouncements(response.announcements);
+    } catch (error) {
+      console.error('Error loading announcements:', error);
+      setAnnouncements([]);
     }
   };
 
@@ -363,7 +374,7 @@ function StudentDashboard({ user, onLogout }) {
               ) : !selectedActiveCourse ? (
                 <div className="courses-grid">
                   {activeCourses.map((course) => (
-                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); }}>
+                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); loadAnnouncements(course.course_id); }}>
                       <h3>{course.title}</h3>
                       <p className="course-level">{course.level}</p>
                       <p className="course-duration">Duration: {course.duration}</p>
@@ -375,7 +386,24 @@ function StudentDashboard({ user, onLogout }) {
                 <div className="student-course-view">
                   <div className="student-course-header">
                     <h3>{activeCourses.find(c => c.course_id === selectedActiveCourse)?.title}</h3>
-                    <button className="btn btn-secondary" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); }}>← Back to Courses</button>
+                    <button className="btn btn-secondary" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); setAnnouncements([]); }}>← Back to Courses</button>
+                  </div>
+
+                  <div className="student-course-section">
+                    <h3>Announcements</h3>
+                    {announcements.length === 0 ? (
+                      <p style={{ color: '#666', margin: 0 }}>No announcements for this course yet.</p>
+                    ) : (
+                      <div className="announcements-list">
+                        {announcements.map((a) => (
+                          <div key={a.announcement_id} className="announcement-item">
+                            <h4>{a.title}</h4>
+                            {a.content && <p>{a.content}</p>}
+                            <span className="announcement-date">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="student-course-section">
