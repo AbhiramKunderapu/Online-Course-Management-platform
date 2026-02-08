@@ -28,31 +28,11 @@
   outline: none;
 }
 
-/* No yellow underline: use a subtle matching glow for primary only */
-.btn::before {
-  display: none;
-}
-
-.btn-primary::before {
-  display: block;
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%) scaleX(0);
-  width: 80%;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 2px;
-  transition: transform 0.25s ease;
-}
-
+/* No underline on any button — blue buttons use lift + shadow only */
+.btn::before,
+.btn-primary::before,
 .btn-primary:hover::before {
-  transform: translateX(-50%) scaleX(1);
-}
-
-.btn-primary:disabled::before {
-  display: none;
+  display: none !important;
 }
 
 .btn-primary {
@@ -92,21 +72,23 @@
   outline-offset: 2px;
 }
 
-/* Attractive dark slate/gold accent instead of red */
+/* Attractive dark slate with subtle gold accent (no red) */
 .btn-danger {
   background: linear-gradient(135deg, #334155 0%, #1e293b 100%);
   color: #f8fafc;
+  border: 1px solid rgba(212, 175, 55, 0.25);
   box-shadow: 0 2px 10px rgba(30, 41, 59, 0.3);
 }
 
 .btn-danger:hover {
   background: linear-gradient(135deg, #475569 0%, #334155 100%);
+  border-color: rgba(212, 175, 55, 0.5);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(30, 41, 59, 0.4);
+  box-shadow: 0 4px 14px rgba(30, 41, 59, 0.4), 0 0 12px rgba(212, 175, 55, 0.15);
 }
 
 .btn-danger:focus-visible {
-  outline: 2px solid rgba(100, 116, 139, 0.7);
+  outline: 2px solid rgba(212, 175, 55, 0.5);
   outline-offset: 2px;
 }
 

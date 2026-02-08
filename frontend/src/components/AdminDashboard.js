@@ -463,17 +463,13 @@ function AdminDashboard({ user, onLogout }) {
                   </button>
                 </form>
               )}
-              <h3 className="courses-list-title">All Courses — click any course to edit</h3>
-              <div className="courses-grid">
+              <h3 className="courses-list-title">All Courses — hover a course and click Edit to modify</h3>
+              <div className="courses-grid courses-grid-admin">
                 {courses.length === 0 ? (
                   <p className="empty-state">No courses yet. Add your first course above!</p>
                 ) : (
                   courses.map((course) => (
-                    <div
-                      key={course.course_id}
-                      className={`course-card course-card-clickable ${editingCourse?.course_id === course.course_id ? 'course-card-editing' : ''}`}
-                      onClick={() => openEditCourse(course)}
-                    >
+                    <div key={course.course_id} className="course-card course-card-hover-edit">
                       <h4>{course.title}</h4>
                       {course.university_name && (
                         <p className="course-meta">
@@ -485,11 +481,18 @@ function AdminDashboard({ user, onLogout }) {
                       <p className="course-level">{course.level}</p>
                       <p className="course-duration">Duration: {course.duration || '—'}</p>
                       {course.fees != null && <p className="course-fees">₹{course.fees}</p>}
+                      <div className="course-card-edit-overlay">
+                        <button type="button" className="btn btn-primary btn-edit-on-card" onClick={(e) => { e.stopPropagation(); openEditCourse(course); }}>
+                          Edit
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
               </div>
               {editingCourse && (
+                <div className="modal-overlay" onClick={closeEditCourse}>
+                  <div className="modal-panel edit-course-modal" onClick={(e) => e.stopPropagation()}>
                 <form onSubmit={handleUpdateCourse} className="card add-course-form edit-course-form">
                   <div className="edit-course-header">
                     <h3>Edit Course</h3>
@@ -610,6 +613,8 @@ function AdminDashboard({ user, onLogout }) {
                     </button>
                   </div>
                 </form>
+                  </div>
+                </div>
               )}
             </div>
           )}

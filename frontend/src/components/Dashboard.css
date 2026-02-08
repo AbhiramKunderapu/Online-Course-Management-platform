@@ -146,6 +146,67 @@
   box-shadow: 0 0 20px rgba(251, 191, 36, 0.35);
 }
 
+/* Admin: course card with hover Edit */
+.course-card-hover-edit {
+  position: relative;
+  cursor: default;
+}
+
+.course-card-hover-edit:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 30px rgba(14, 165, 233, 0.12);
+}
+
+.course-card-hover-edit .course-card-edit-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.course-card-hover-edit:hover .course-card-edit-overlay {
+  opacity: 1;
+}
+
+.course-card-hover-edit .btn-edit-on-card {
+  width: auto;
+  padding: 10px 24px;
+  font-size: 15px;
+}
+
+/* Modal for edit course */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+}
+
+.modal-panel {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.edit-course-modal .card.edit-course-form {
+  margin-top: 0;
+  border: none;
+  box-shadow: none;
+}
+
 .empty-state {
   grid-column: 1 / -1;
   text-align: center;
@@ -627,6 +688,130 @@
   margin-bottom: 16px;
 }
 
+/* Assignment page (Instructor) */
+.assignment-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.assignment-section-title {
+  margin: 0 0 20px 0;
+  font-size: 18px;
+  color: #1e293b;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.assignment-create-card,
+.assignment-list-card {
+  padding: 24px;
+}
+
+.form-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.form-actions .btn {
+  width: auto;
+}
+
+.assignment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.assignment-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 18px;
+  background: #f8fafc;
+  border-radius: 12px;
+  border-left: 4px solid #0ea5e9;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.assignment-list-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.assignment-meta {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.assignment-link {
+  color: #0ea5e9;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.assignment-link:hover {
+  text-decoration: underline;
+}
+
+.assignment-btn-submissions {
+  width: auto;
+  flex-shrink: 0;
+}
+
+.assignment-empty {
+  color: #64748b;
+  margin: 0;
+  padding: 16px 0;
+}
+
+.submissions-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.submissions-panel-header span {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.submissions-table .grade-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.submissions-table .grade-input {
+  width: 70px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.submissions-table .grade-feedback {
+  width: 120px;
+  min-width: 100px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.link-button {
+  color: #0ea5e9;
+  font-weight: 500;
+}
+
 .assignment-row {
   display: flex;
   justify-content: space-between;
@@ -640,9 +825,9 @@
 }
 
 .submissions-panel {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #e2e8f0;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 2px solid #e2e8f0;
 }
 
 .grade-form {
@@ -807,11 +992,23 @@
   font-size: 11px;
 }
 
+.student-assignments-section .assignment-empty-msg {
+  color: #64748b;
+  margin: 0;
+}
+
+.student-assignment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .student-assignment-block {
-  padding: 16px;
+  padding: 20px;
   background: #f8fafc;
-  border-radius: 10px;
-  margin-bottom: 16px;
+  border-radius: 12px;
+  margin-bottom: 0;
+  border: 1px solid #e2e8f0;
   border-left: 4px solid #8b5cf6;
 }
 
@@ -819,27 +1016,83 @@
   margin-bottom: 0;
 }
 
+.student-assignment-title {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #1e293b;
+}
+
+.student-assignment-desc {
+  color: #64748b;
+  font-size: 14px;
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+
+.student-assignment-meta {
+  margin: 0 0 14px 0;
+  font-size: 14px;
+  color: #475569;
+}
+
 .student-assignment-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.student-assignment-actions .btn {
+  padding: 10px 18px;
+  font-size: 14px;
+  width: auto;
+}
+
+.btn-assignment-view {
+  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+  color: white;
+}
+
+.btn-assignment-submit {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%);
+  color: white;
+}
+
+.student-submit-form {
   display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  margin-top: 12px;
+  flex: 1;
+  min-width: 0;
 }
 
-.student-assignment-actions .btn {
-  padding: 8px 16px;
+.student-submit-form .student-submit-input {
+  flex: 1;
+  min-width: 200px;
+  padding: 10px 14px;
+}
+
+.student-submission-status {
   font-size: 14px;
+  color: #475569;
+}
+
+.student-submission-status a {
+  color: #0ea5e9;
+  font-weight: 500;
 }
 
 .student-total-marks {
-  margin-top: 20px;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, rgba(14, 165, 233, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%);
-  border-radius: 10px;
+  margin-top: 24px;
+  padding: 18px 22px;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.12) 0%, rgba(6, 182, 212, 0.12) 100%);
+  border-radius: 12px;
   font-size: 16px;
   font-weight: 600;
   color: #1e293b;
+  border: 1px solid rgba(14, 165, 233, 0.2);
 }
 
 @media (max-width: 768px) {

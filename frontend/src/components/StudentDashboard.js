@@ -450,39 +450,41 @@ function StudentDashboard({ user, onLogout }) {
                     )}
                   </div>
 
-                  <div className="student-course-section">
+                  <div className="student-course-section student-assignments-section">
                     <h3>Assignments</h3>
                     {assignments.length === 0 ? (
-                      <p style={{ color: '#666', margin: 0 }}>No assignments for this course yet.</p>
+                      <p className="assignment-empty-msg">No assignments for this course yet.</p>
                     ) : (
                       <>
-                        {assignments.map((a) => (
-                          <div key={a.assignment_id} className="student-assignment-block">
-                            <h4>{a.title}</h4>
-                            {a.description && <p style={{ color: '#666', fontSize: '14px', margin: '0 0 8px 0' }}>{a.description}</p>}
-                            <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}><strong>Max Marks:</strong> {a.max_marks}{a.due_date && <> · <strong>Due:</strong> {new Date(a.due_date).toLocaleString()}</>}</p>
-                            <div className="student-assignment-actions">
-                              <a href={a.assignment_url} target="_blank" rel="noopener noreferrer" className="btn btn-primary">View Assignment</a>
-                              {submittingFor === a.assignment_id ? (
-                                <form onSubmit={handleSubmitAssignment} style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                                  <input type="url" className="input" value={submitUrl} onChange={(e) => setSubmitUrl(e.target.value)} placeholder="Paste your solution URL" required style={{ flex: '1', minWidth: '200px' }} />
-                                  <button type="submit" className="btn btn-primary">Submit</button>
-                                  <button type="button" className="btn btn-secondary" onClick={() => { setSubmittingFor(null); setSubmitUrl(''); }}>Cancel</button>
-                                </form>
-                              ) : (
-                                a.submission_url ? (
-                                  <span style={{ fontSize: '14px' }}>
-                                    Submitted: <a href={a.submission_url} target="_blank" rel="noopener noreferrer">View</a>
-                                    {a.marks_obtained != null && ` · Marks: ${a.marks_obtained}/${a.max_marks}`}
-                                    {a.feedback && ` · Feedback: ${a.feedback}`}
-                                  </span>
+                        <div className="student-assignment-list">
+                          {assignments.map((a) => (
+                            <div key={a.assignment_id} className="student-assignment-block">
+                              <h4 className="student-assignment-title">{a.title}</h4>
+                              {a.description && <p className="student-assignment-desc">{a.description}</p>}
+                              <p className="student-assignment-meta"><strong>Max Marks:</strong> {a.max_marks}{a.due_date && <> · <strong>Due:</strong> {new Date(a.due_date).toLocaleString()}</>}</p>
+                              <div className="student-assignment-actions">
+                                <a href={a.assignment_url} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-assignment-view">View Assignment</a>
+                                {submittingFor === a.assignment_id ? (
+                                  <form onSubmit={handleSubmitAssignment} className="student-submit-form">
+                                    <input type="url" className="input student-submit-input" value={submitUrl} onChange={(e) => setSubmitUrl(e.target.value)} placeholder="Paste your solution URL" required />
+                                    <button type="submit" className="btn btn-primary btn-sm">Submit</button>
+                                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSubmittingFor(null); setSubmitUrl(''); }}>Cancel</button>
+                                  </form>
                                 ) : (
-                                  <button className="btn btn-secondary" onClick={() => setSubmittingFor(a.assignment_id)}>Submit Solution Link</button>
-                                )
-                              )}
+                                  a.submission_url ? (
+                                    <span className="student-submission-status">
+                                      Submitted: <a href={a.submission_url} target="_blank" rel="noopener noreferrer">View</a>
+                                      {a.marks_obtained != null && ` · Marks: ${a.marks_obtained}/${a.max_marks}`}
+                                      {a.feedback && ` · Feedback: ${a.feedback}`}
+                                    </span>
+                                  ) : (
+                                    <button type="button" className="btn btn-secondary btn-assignment-submit" onClick={() => setSubmittingFor(a.assignment_id)}>Submit Solution Link</button>
+                                  )
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                         <div className="student-total-marks">
                           Total Marks: {(() => {
                             const totalObtained = assignments.reduce((s, a) => s + (a.marks_obtained ?? 0), 0);

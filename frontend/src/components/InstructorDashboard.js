@@ -549,10 +549,10 @@ function InstructorDashboard({ user, onLogout }) {
                       </div>
                     )}
                     {courseActionTab === 'assignments' && (
-                      <div>
-                        <div className="card" style={{ marginBottom: '20px' }}>
-                          <h3>Create Assignment</h3>
-                          <form onSubmit={handleCreateAssignment}>
+                      <div className="assignment-page">
+                        <div className="card assignment-create-card">
+                          <h3 className="assignment-section-title">Create Assignment</h3>
+                          <form onSubmit={handleCreateAssignment} className="assignment-form">
                             <div className="form-row">
                               <div className="form-group">
                                 <label>Title</label>
@@ -577,44 +577,57 @@ function InstructorDashboard({ user, onLogout }) {
                                 <input type="number" className="input" min="1" max="100" value={assignmentForm.max_marks} onChange={(e) => setAssignmentForm({ ...assignmentForm, max_marks: e.target.value })} />
                               </div>
                             </div>
-                            <button type="submit" className="btn btn-primary" onClick={() => setAssignmentForm(f => ({ ...f, course_id: selectedCourse }))}>Create Assignment</button>
+                            <div className="form-actions">
+                              <button type="submit" className="btn btn-primary" style={{ width: 'auto' }} onClick={() => setAssignmentForm(f => ({ ...f, course_id: selectedCourse }))}>Create Assignment</button>
+                            </div>
                           </form>
                         </div>
-                        <div className="card">
-                          <h3>Course Assignments</h3>
-                          {assignments.length === 0 ? <p>No assignments yet.</p> : (
-                            assignments.map((a) => (
-                              <div key={a.assignment_id} className="assignment-row">
-                                <div><strong>{a.title}</strong> ({a.max_marks} marks) — <a href={a.assignment_url} target="_blank" rel="noopener noreferrer">View</a></div>
-                                <button className="btn btn-primary btn-sm" onClick={() => { setSelectedAssignment(a.assignment_id); loadSubmissions(a.assignment_id); }}>Submissions</button>
-                              </div>
-                            ))
+                        <div className="card assignment-list-card">
+                          <h3 className="assignment-section-title">Course Assignments</h3>
+                          {assignments.length === 0 ? <p className="assignment-empty">No assignments yet.</p> : (
+                            <div className="assignment-list">
+                              {assignments.map((a) => (
+                                <div key={a.assignment_id} className="assignment-list-item">
+                                  <div className="assignment-list-info">
+                                    <strong>{a.title}</strong>
+                                    <span className="assignment-meta">({a.max_marks} marks)</span>
+                                    <a href={a.assignment_url} target="_blank" rel="noopener noreferrer" className="assignment-link">View assignment</a>
+                                  </div>
+                                  <button type="button" className="btn btn-primary btn-sm assignment-btn-submissions" onClick={() => { setSelectedAssignment(a.assignment_id); loadSubmissions(a.assignment_id); }}>Submissions</button>
+                                </div>
+                              ))}
+                            </div>
                           )}
                           {selectedAssignment && (
                             <div className="submissions-panel">
-                              <button className="btn btn-secondary btn-sm" onClick={() => { setSelectedAssignment(null); setSubmissions([]); }}>Close</button>
+                              <div className="submissions-panel-header">
+                                <span>Submissions</span>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSelectedAssignment(null); setSubmissions([]); }}>Close</button>
+                              </div>
                               {submissions.length > 0 ? (
-                                <table className="table">
-                                  <thead><tr><th>Student</th><th>Course Total</th><th>Link</th><th>Marks</th><th>Grade</th></tr></thead>
-                                  <tbody>
-                                    {submissions.map((s) => (
-                                      <tr key={s.submission_id}>
-                                        <td>{s.student_name}</td>
-                                        <td>{s.course_percent != null ? `${s.course_total_obtained}/${s.course_total_possible} (${s.course_percent}%)` : '-'}</td>
-                                        <td><a href={s.submission_url} target="_blank" rel="noopener noreferrer">View</a></td>
-                                        <td>{s.marks_obtained != null ? `${s.marks_obtained}/${s.max_marks}` : '-'}</td>
-                                        <td>
-                                          <form onSubmit={(e) => handleGradeSubmission(e, s.submission_id)} className="grade-form">
-                                            <input name="marks" type="number" className="input" min="0" max={s.max_marks} placeholder="Marks" defaultValue={s.marks_obtained ?? ''} />
-                                            <input name="feedback" type="text" className="input" placeholder="Feedback" defaultValue={s.feedback ?? ''} />
-                                            <button type="submit" className="btn btn-primary btn-sm">Grade</button>
-                                          </form>
-                                        </td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              ) : <p>No submissions yet.</p>}
+                                <div className="table-wrap">
+                                  <table className="table submissions-table">
+                                    <thead><tr><th>Student</th><th>Course Total</th><th>Link</th><th>Marks</th><th>Grade</th></tr></thead>
+                                    <tbody>
+                                      {submissions.map((s) => (
+                                        <tr key={s.submission_id}>
+                                          <td>{s.student_name}</td>
+                                          <td>{s.course_percent != null ? `${s.course_total_obtained}/${s.course_total_possible} (${s.course_percent}%)` : '-'}</td>
+                                          <td><a href={s.submission_url} target="_blank" rel="noopener noreferrer" className="link-button">View</a></td>
+                                          <td>{s.marks_obtained != null ? `${s.marks_obtained}/${s.max_marks}` : '-'}</td>
+                                          <td>
+                                            <form onSubmit={(e) => handleGradeSubmission(e, s.submission_id)} className="grade-form">
+                                              <input name="marks" type="number" className="input grade-input" min="0" max={s.max_marks} placeholder="Marks" defaultValue={s.marks_obtained ?? ''} />
+                                              <input name="feedback" type="text" className="input grade-feedback" placeholder="Feedback" defaultValue={s.feedback ?? ''} />
+                                              <button type="submit" className="btn btn-primary btn-sm">Grade</button>
+                                            </form>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : <p className="assignment-empty">No submissions yet.</p>}
                             </div>
                           )}
                         </div>
