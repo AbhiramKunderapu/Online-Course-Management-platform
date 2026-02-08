@@ -516,7 +516,7 @@ def get_student_profile():
             }
         })
 
-    except Exception as :
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
