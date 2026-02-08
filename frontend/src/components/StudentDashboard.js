@@ -190,7 +190,7 @@ function StudentDashboard({ user, onLogout }) {
   return (
     <div className="dashboard-container">
       <div className="sidebar">
-        <h2>🎓 MOOC</h2>
+        <h2>🎓 CourseHub</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
         <a href="#profile" onClick={() => setActiveTab('profile')}>Personal Info</a>
         <a href="#enrolled" onClick={() => setActiveTab('enrolled')}>All Enrolled Courses</a>
@@ -490,22 +490,42 @@ function StudentDashboard({ user, onLogout }) {
           {activeTab === 'browse' && (
             <div>
               <h2>Browse Courses</h2>
-              <div className="courses-grid">
-                {courses.map((course) => (
-                  <div key={course.course_id} className="course-card">
-                    <h3>{course.title}</h3>
-                    <p className="course-level">{course.level}</p>
-                    <p className="course-duration">Duration: {course.duration}</p>
-                    {course.fees && <p className="course-fees">${course.fees}</p>}
-                    {course.description && <p className="course-description">{course.description}</p>}
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => handleEnroll(course.course_id)}
-                    >
-                      Enroll Now
-                    </button>
-                  </div>
-                ))}
+              <p className="browse-subtitle">Explore all available courses and enroll in the ones you're interested in.</p>
+              <div className="courses-grid browse-courses">
+                {courses.length === 0 ? (
+                  <p className="empty-state">No courses available. Check back later!</p>
+                ) : (
+                  courses.map((course) => {
+                    const isEnrolled = allEnrolledCourses.some(
+                      (e) => e.course_id === course.course_id
+                    );
+                    return (
+                      <div key={course.course_id} className="course-card course-card-browse">
+                        <div className="course-card-header">
+                          <h3>{course.title}</h3>
+                          <span className="course-level">{course.level}</span>
+                        </div>
+                        <p className="course-duration">Duration: {course.duration || '—'}</p>
+                        <p className={`course-fees ${!course.fees ? 'free' : ''}`}>
+                          {course.fees ? `$${course.fees}` : 'Free'}
+                        </p>
+                        {course.description && (
+                          <p className="course-description">{course.description}</p>
+                        )}
+                        {isEnrolled ? (
+                          <span className="enrolled-badge">Already Enrolled</span>
+                        ) : (
+                          <button
+                            className="btn btn-primary btn-enroll"
+                            onClick={() => handleEnroll(course.course_id)}
+                          >
+                            Enroll Now
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
           )}

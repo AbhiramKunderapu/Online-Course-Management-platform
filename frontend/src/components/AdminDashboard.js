@@ -10,6 +10,24 @@ function AdminDashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [assignForm, setAssignForm] = useState({ instructor_id: '', course_id: '' });
+  const [showAddCourse, setShowAddCourse] = useState(false);
+  const [addCourseForm, setAddCourseForm] = useState({
+    title: '',
+    duration: '',
+    level: 'beginner',
+    description: '',
+    fees: ''
+  });
+  const [addCourseLoading, setAddCourseLoading] = useState(false);
+  const [editingCourse, setEditingCourse] = useState(null);
+  const [editCourseForm, setEditCourseForm] = useState({
+    title: '',
+    duration: '',
+    level: 'beginner',
+    description: '',
+    fees: ''
+  });
+  const [editCourseLoading, setEditCourseLoading] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -107,6 +125,72 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
+  const handleAddCourse = async (e) => {
+    e.preventDefault();
+    setAddCourseLoading(true);
+    try {
+      const response = await adminAPI.createCourse(user.user_id, {
+        title: addCourseForm.title,
+        duration: addCourseForm.duration,
+        level: addCourseForm.level,
+        description: addCourseForm.description,
+        fees: addCourseForm.fees ? parseFloat(addCourseForm.fees) : null
+      });
+      if (response.success) {
+        alert('Course created successfully!');
+        setShowAddCourse(false);
+        setAddCourseForm({ title: '', duration: '', level: 'beginner', description: '', fees: '' });
+        loadCourses();
+        loadDashboardData();
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to create course');
+    } finally {
+      setAddCourseLoading(false);
+    }
+  };
+
+  const openEditCourse = (course) => {
+    setEditingCourse(course);
+    setEditCourseForm({
+      title: course.title || '',
+      duration: course.duration || '',
+      level: course.level || 'beginner',
+      description: course.description || '',
+      fees: course.fees != null ? String(course.fees) : ''
+    });
+  };
+
+  const closeEditCourse = () => {
+    setEditingCourse(null);
+    setEditCourseForm({ title: '', duration: '', level: 'beginner', description: '', fees: '' });
+  };
+
+  const handleUpdateCourse = async (e) => {
+    e.preventDefault();
+    if (!editingCourse) return;
+    setEditCourseLoading(true);
+    try {
+      const response = await adminAPI.updateCourse(user.user_id, editingCourse.course_id, {
+        title: editCourseForm.title,
+        duration: editCourseForm.duration,
+        level: editCourseForm.level,
+        description: editCourseForm.description,
+        fees: editCourseForm.fees ? parseFloat(editCourseForm.fees) : null
+      });
+      if (response.success) {
+        alert('Course updated successfully!');
+        closeEditCourse();
+        loadCourses();
+        loadDashboardData();
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to update course');
+    } finally {
+      setEditCourseLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
@@ -114,7 +198,7 @@ function AdminDashboard({ user, onLogout }) {
   return (
     <div className="dashboard-container">
       <div className="sidebar">
-        <h2>🎓 MOOC</h2>
+        <h2>🎓 CourseHub</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
         <a href="#users" onClick={() => setActiveTab('users')}>Manage Users</a>
         <a href="#pending" onClick={() => setActiveTab('pending')}>Pending Approval</a>
@@ -221,16 +305,174 @@ function AdminDashboard({ user, onLogout }) {
 
           {activeTab === 'courses' && (
             <div>
-              <h2>All Courses</h2>
-              <div className="courses-grid">
-                {courses.map((course) => (
-                  <div key={course.course_id} className="course-card">
-                    <h3>{course.title}</h3>
-                    <p className="course-level">{course.level}</p>
-                    <p className="course-duration">Duration: {course.duration}</p>
-                  </div>
-                ))}
+              <div className="section-header">
+                <h2>Manage Courses</h2>
+                <button
+                  className="btn btn-primary btn-add"
+                  onClick={() => setShowAddCourse(!showAddCourse)}
+                >
+                  {showAddCourse ? '− Cancel' : '+ Add Course'}
+                </button>
               </div>
+              {showAddCourse && (
+                <form onSubmit={handleAddCourse} className="card add-course-form">
+                  <h3>Add New Course</h3>
+                  <div className="form-group">
+                    <label>Course Title *</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={addCourseForm.title}
+                      onChange={(e) => setAddCourseForm({ ...addCourseForm, title: e.target.value })}
+                      placeholder="e.g., Introduction to Python"
+                      required
+                    />
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Duration</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={addCourseForm.duration}
+                        onChange={(e) => setAddCourseForm({ ...addCourseForm, duration: e.target.value })}
+                        placeholder="e.g., 8 weeks"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Level</label>
+                      <select
+                        className="input"
+                        value={addCourseForm.level}
+                        onChange={(e) => setAddCourseForm({ ...addCourseForm, level: e.target.value })}
+                      >
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Fees ($)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="input"
+                        value={addCourseForm.fees}
+                        onChange={(e) => setAddCourseForm({ ...addCourseForm, fees: e.target.value })}
+                        placeholder="0 for free"
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Description</label>
+                    <textarea
+                      className="input"
+                      rows="3"
+                      value={addCourseForm.description}
+                      onChange={(e) => setAddCourseForm({ ...addCourseForm, description: e.target.value })}
+                      placeholder="Brief course description..."
+                    />
+                  </div>
+                  <button type="submit" className="btn btn-primary" disabled={addCourseLoading}>
+                    {addCourseLoading ? 'Creating...' : 'Create Course'}
+                  </button>
+                </form>
+              )}
+              <h3 className="courses-list-title">All Courses — click any course to edit</h3>
+              <div className="courses-grid">
+                {courses.length === 0 ? (
+                  <p className="empty-state">No courses yet. Add your first course above!</p>
+                ) : (
+                  courses.map((course) => (
+                    <div
+                      key={course.course_id}
+                      className={`course-card course-card-clickable ${editingCourse?.course_id === course.course_id ? 'course-card-editing' : ''}`}
+                      onClick={() => openEditCourse(course)}
+                    >
+                      <h4>{course.title}</h4>
+                      <p className="course-level">{course.level}</p>
+                      <p className="course-duration">Duration: {course.duration || '—'}</p>
+                      {course.fees != null && <p className="course-fees">${course.fees}</p>}
+                    </div>
+                  ))
+                )}
+              </div>
+              {editingCourse && (
+                <form onSubmit={handleUpdateCourse} className="card add-course-form edit-course-form">
+                  <div className="edit-course-header">
+                    <h3>Edit Course</h3>
+                    <button type="button" className="btn btn-secondary btn-close-edit" onClick={closeEditCourse}>
+                      Cancel
+                    </button>
+                  </div>
+                  <div className="form-group">
+                    <label>Course Title *</label>
+                    <input
+                      type="text"
+                      className="input"
+                      value={editCourseForm.title}
+                      onChange={(e) => setEditCourseForm({ ...editCourseForm, title: e.target.value })}
+                      placeholder="e.g., Introduction to Python"
+                      required
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>Duration</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={editCourseForm.duration}
+                        onChange={(e) => setEditCourseForm({ ...editCourseForm, duration: e.target.value })}
+                        placeholder="e.g., 8 weeks"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Level</label>
+                      <select
+                        className="input"
+                        value={editCourseForm.level}
+                        onChange={(e) => setEditCourseForm({ ...editCourseForm, level: e.target.value })}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <option value="beginner">Beginner</option>
+                        <option value="intermediate">Intermediate</option>
+                        <option value="advanced">Advanced</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Fees ($)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="input"
+                        value={editCourseForm.fees}
+                        onChange={(e) => setEditCourseForm({ ...editCourseForm, fees: e.target.value })}
+                        placeholder="0 for free"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Description</label>
+                    <textarea
+                      className="input"
+                      rows="3"
+                      value={editCourseForm.description}
+                      onChange={(e) => setEditCourseForm({ ...editCourseForm, description: e.target.value })}
+                      placeholder="Brief course description..."
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                  <button type="submit" className="btn btn-primary" disabled={editCourseLoading}>
+                    {editCourseLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </form>
+              )}
             </div>
           )}
 

@@ -9,8 +9,23 @@ import json
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "change-me-in-production")
 CORS(app)  # Enable CORS for React frontend
+
+
+def require_admin(user_id):
+    """Verify user has administrator role. Returns (ok, error_response)."""
+    if not user_id:
+        return False, (jsonify({"error": "user_id is required"}), 400)
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT role FROM public.users WHERE user_id = %s::uuid", (user_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row or row[0] != "administrator":
+        return False, (jsonify({"error": "Unauthorized: admin access required"}), 403)
+    return True, None
 
 # Supabase Auth URL (get from your Supabase project settings)
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
@@ -625,6 +640,117 @@ def assign_instructor():
 def admin_courses():
     """Get all courses (admin view)"""
     return courses()  # Reuse the courses endpoint
+
+
+@app.route("/api/admin/courses", methods=["POST"])
+def create_course():
+    """Create a new course (admin only)"""
+    try:
+        data = request.get_json()
+        admin_user_id = data.get("admin_user_id")
+        ok, err = require_admin(admin_user_id)
+        if not ok:
+            return err
+
+        title = data.get("title")
+        duration = data.get("duration", "")
+        level = data.get("level", "beginner")
+        description = data.get("description", "")
+        fees = data.get("fees")
+
+        if not title or not title.strip():
+            return jsonify({"error": "title is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO public.course (title, duration, level, description, fees)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING course_id, title, duration, level, description, fees
+        """, (title.strip(), duration or "", level or "beginner", description or "", fees))
+
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Course created successfully",
+            "course": {
+                "course_id": str(row[0]),
+                "title": row[1],
+                "duration": row[2],
+                "level": row[3],
+                "description": row[4],
+                "fees": float(row[5]) if row[5] else None
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/courses/<course_id>", methods=["PUT"])
+def update_course(course_id):
+    """Update a course (admin only)"""
+    try:
+        data = request.get_json()
+        admin_user_id = data.get("admin_user_id")
+        ok, err = require_admin(admin_user_id)
+        if not ok:
+            return err
+
+        title = data.get("title")
+        duration = data.get("duration")
+        level = data.get("level")
+        description = data.get("description")
+        fees = data.get("fees")
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT course_id, title, duration, level, description, fees FROM public.course WHERE course_id = %s::uuid", (course_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Course not found"}), 404
+
+        new_title = title.strip() if title is not None and title else row[1]
+        new_duration = duration if duration is not None else row[2]
+        new_level = level if level is not None else row[3]
+        new_description = description if description is not None else row[4]
+        new_fees = fees if fees is not None else row[5]
+
+        if not new_title:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "title cannot be empty"}), 400
+
+        cur.execute("""
+            UPDATE public.course
+            SET title = %s, duration = %s, level = %s, description = %s, fees = %s
+            WHERE course_id = %s::uuid
+        """, (new_title, new_duration or "", new_level or "beginner", new_description or "", new_fees, course_id))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "message": "Course updated successfully",
+            "course": {
+                "course_id": course_id,
+                "title": new_title,
+                "duration": new_duration,
+                "level": new_level,
+                "description": new_description,
+                "fees": float(new_fees) if new_fees else None
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/admin/instructors", methods=["GET"])

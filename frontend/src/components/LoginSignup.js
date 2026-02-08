@@ -64,7 +64,7 @@ function LoginSignup({ onLogin }) {
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <h1>🎓 MOOC Platform</h1>
+          <h1>🎓 CourseHub</h1>
           <p>{isLogin ? 'Welcome back!' : 'Create your account'}</p>
         </div>
 

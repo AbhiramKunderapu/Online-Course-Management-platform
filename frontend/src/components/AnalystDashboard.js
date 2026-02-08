@@ -37,7 +37,7 @@ function AnalystDashboard({ user, onLogout }) {
   return (
     <div className="dashboard-container">
       <div className="sidebar">
-        <h2>🎓 MOOC</h2>
+        <h2>🎓 CourseHub</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
         <a href="#courses" onClick={() => setActiveTab('courses')}>All Courses</a>
         <a href="#insights" onClick={() => setActiveTab('insights')}>Insights</a>

@@ -95,6 +95,22 @@ export const adminAPI = {
     return response.data;
   },
 
+  createCourse: async (admin_user_id, courseData) => {
+    const response = await api.post('/admin/courses', {
+      admin_user_id,
+      ...courseData,
+    });
+    return response.data;
+  },
+
+  updateCourse: async (admin_user_id, course_id, courseData) => {
+    const response = await api.put(`/admin/courses/${course_id}`, {
+      admin_user_id,
+      ...courseData,
+    });
+    return response.data;
+  },
+
   getInstructors: async () => {
     const response = await api.get('/admin/instructors');
     return response.data;
