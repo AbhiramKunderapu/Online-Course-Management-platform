@@ -132,7 +132,34 @@ def signup():
             
             if response.status_code not in [200, 201]:
                 error_msg = response.json().get("msg", "Failed to create user")
-                return jsonify({"error": f"Signup failed: {error_msg}"}), 400
+                # If email already registered in Auth but not in our DB (e.g. rejected signup), remove orphan and retry
+                if "already" in error_msg.lower() and "registered" in error_msg.lower():
+                    conn = get_connection()
+                    cur = conn.cursor()
+                    cur.execute("SELECT user_id FROM public.users WHERE email = %s", (email,))
+                    row = cur.fetchone()
+                    cur.close()
+                    conn.close()
+                    if not row:
+                        # Email not in our DB -> orphan auth user; delete from Auth and retry once
+                        list_url = f"{SUPABASE_URL}/auth/v1/admin/users?per_page=1000"
+                        list_resp = requests.get(list_url, headers=headers)
+                        if list_resp.status_code == 200:
+                            data = list_resp.json()
+                            users_list = data if isinstance(data, list) else (data.get("users") or []) if isinstance(data, dict) else []
+                            for u in users_list:
+                                    if isinstance(u, dict) and (u.get("email") or "").lower() == email.lower():
+                                        orphan_id = u.get("id")
+                                        if orphan_id:
+                                            requests.delete(
+                                                f"{SUPABASE_URL}/auth/v1/admin/users/{orphan_id}",
+                                                headers=headers
+                                            )
+                                        response = requests.post(auth_url, headers=headers, json=payload)
+                                        break
+                if response.status_code not in [200, 201]:
+                    error_msg = response.json().get("msg", "Failed to create user") if response.text else error_msg
+                    return jsonify({"error": f"Signup failed: {error_msg}"}), 400
 
             auth_user = response.json()
             user_id = auth_user.get("id")
@@ -306,22 +333,27 @@ def dashboard():
 
 @app.route("/api/courses", methods=["GET"])
 def courses():
-    """Get all courses"""
+    """Get all courses with university and instructor(s)"""
     try:
         conn = get_connection()
         cur = conn.cursor()
 
         cur.execute("""
-            SELECT course_id, title, duration, level, description, fees
-            FROM public.course
-            ORDER BY title
+            SELECT c.course_id, c.title, c.duration, c.level, c.description, c.fees,
+                   un.name AS university_name, un.ranking AS university_ranking,
+                   (SELECT string_agg('Prof. ' || u.name, ', ')
+                    FROM public.teaches t
+                    JOIN public.users u ON t.instructor_id = u.user_id
+                    WHERE t.course_id = c.course_id) AS instructor_names
+            FROM public.course c
+            LEFT JOIN public.university un ON c.university_id = un.university_id
+            ORDER BY c.title
         """)
 
         courses = cur.fetchall()
         cur.close()
         conn.close()
 
-        # Convert to list of dicts
         courses_list = []
         for course in courses:
             courses_list.append({
@@ -330,7 +362,10 @@ def courses():
                 "duration": course[2],
                 "level": course[3],
                 "description": course[4],
-                "fees": float(course[5]) if course[5] else None
+                "fees": float(course[5]) if course[5] else None,
+                "university_name": course[6] or None,
+                "university_ranking": course[7] if course[7] is not None else None,
+                "instructor_names": course[8] or None
             })
 
         return jsonify({"success": True, "courses": courses_list})
@@ -388,19 +423,31 @@ def my_courses():
 
         if status:
             cur.execute("""
-                SELECT c.course_id, c.title, c.duration, c.level, e.status, 
-                       e.enroll_date, e.grade, e.completion_date
+                SELECT c.course_id, c.title, c.duration, c.level, e.status,
+                       e.enroll_date, e.grade, e.completion_date,
+                       un.name AS university_name, un.ranking AS university_ranking,
+                       (SELECT string_agg('Prof. ' || u.name, ', ')
+                        FROM public.teaches t
+                        JOIN public.users u ON t.instructor_id = u.user_id
+                        WHERE t.course_id = c.course_id) AS instructor_names
                 FROM public.enrolled_in e
                 JOIN public.course c ON c.course_id = e.course_id
+                LEFT JOIN public.university un ON c.university_id = un.university_id
                 WHERE e.user_id = %s AND e.status = %s
                 ORDER BY e.enroll_date DESC
             """, (user_id, status))
         else:
             cur.execute("""
-                SELECT c.course_id, c.title, c.duration, c.level, e.status, 
-                       e.enroll_date, e.grade, e.completion_date
+                SELECT c.course_id, c.title, c.duration, c.level, e.status,
+                       e.enroll_date, e.grade, e.completion_date,
+                       un.name AS university_name, un.ranking AS university_ranking,
+                       (SELECT string_agg('Prof. ' || u.name, ', ')
+                        FROM public.teaches t
+                        JOIN public.users u ON t.instructor_id = u.user_id
+                        WHERE t.course_id = c.course_id) AS instructor_names
                 FROM public.enrolled_in e
                 JOIN public.course c ON c.course_id = e.course_id
+                LEFT JOIN public.university un ON c.university_id = un.university_id
                 WHERE e.user_id = %s
                 ORDER BY e.enroll_date DESC
             """, (user_id,))
@@ -419,7 +466,10 @@ def my_courses():
                 "status": course[4],
                 "enroll_date": str(course[5]) if course[5] else None,
                 "grade": course[6],
-                "completion_date": str(course[7]) if course[7] else None
+                "completion_date": str(course[7]) if course[7] else None,
+                "university_name": course[8] if len(course) > 8 else None,
+                "university_ranking": course[9] if len(course) > 9 else None,
+                "instructor_names": course[10] if len(course) > 10 else None
             })
 
         return jsonify({"success": True, "courses": courses_list})
@@ -588,17 +638,32 @@ def approve_user():
 
 @app.route("/api/admin/users/<user_id>", methods=["DELETE"])
 def delete_student(user_id):
-    """Delete a student (admin only)"""
+    """Delete a user (admin only). Removes from DB and from Supabase Auth so the email can sign up again."""
     try:
         conn = get_connection()
         cur = conn.cursor()
 
+        # Remove from role tables first (user may be student or instructor)
         cur.execute("DELETE FROM public.student WHERE user_id = %s::uuid", (user_id,))
+        cur.execute("DELETE FROM public.instructor WHERE user_id = %s::uuid", (user_id,))
         cur.execute("DELETE FROM public.users WHERE user_id = %s::uuid", (user_id,))
 
         conn.commit()
         cur.close()
         conn.close()
+
+        # Delete from Supabase Auth so the same email can sign up again
+        if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+            auth_delete_url = f"{SUPABASE_URL}/auth/v1/admin/users/{user_id}"
+            headers = {
+                "apikey": SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+            }
+            auth_response = requests.delete(auth_delete_url, headers=headers)
+            # 200 or 404 (already gone) are both OK
+            if auth_response.status_code not in (200, 204, 404):
+                # Log but don't fail - DB user is already removed
+                pass
 
         return jsonify({"success": True, "message": "User deleted"})
 
@@ -644,7 +709,7 @@ def admin_courses():
 
 @app.route("/api/admin/courses", methods=["POST"])
 def create_course():
-    """Create a new course (admin only)"""
+    """Create a new course (admin only). Requires university_name and university_ranking; creates university if needed."""
     try:
         data = request.get_json()
         admin_user_id = data.get("admin_user_id")
@@ -657,17 +722,36 @@ def create_course():
         level = data.get("level", "beginner")
         description = data.get("description", "")
         fees = data.get("fees")
+        university_name = (data.get("university_name") or "").strip()
+        university_ranking = data.get("university_ranking")
 
         if not title or not title.strip():
             return jsonify({"error": "title is required"}), 400
+        if not university_name:
+            return jsonify({"error": "university name is required"}), 400
 
         conn = get_connection()
         cur = conn.cursor()
+        # Get or create university
+        cur.execute("SELECT university_id, ranking FROM public.university WHERE name = %s", (university_name,))
+        un_row = cur.fetchone()
+        if un_row:
+            university_id = un_row[0]
+            if university_ranking is not None:
+                cur.execute("UPDATE public.university SET ranking = %s WHERE university_id = %s", (university_ranking, university_id))
+        else:
+            cur.execute("""
+                INSERT INTO public.university (name, ranking)
+                VALUES (%s, %s)
+                RETURNING university_id
+            """, (university_name, university_ranking if university_ranking is not None else None))
+            university_id = cur.fetchone()[0]
+
         cur.execute("""
-            INSERT INTO public.course (title, duration, level, description, fees)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO public.course (title, duration, level, description, fees, university_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING course_id, title, duration, level, description, fees
-        """, (title.strip(), duration or "", level or "beginner", description or "", fees))
+        """, (title.strip(), duration or "", level or "beginner", description or "", fees, university_id))
 
         row = cur.fetchone()
         conn.commit()
@@ -690,9 +774,88 @@ def create_course():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/admin/courses/<course_id>", methods=["DELETE"])
+def delete_course(course_id):
+    """Delete a course (admin only). Cascades to teaches, enrolled_in, modules, etc."""
+    try:
+        admin_user_id = request.args.get("admin_user_id")
+        ok, err = require_admin(admin_user_id)
+        if not ok:
+            return err
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM public.course WHERE course_id = %s::uuid RETURNING course_id", (course_id,))
+        if cur.rowcount == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Course not found"}), 404
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "message": "Course deleted"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/courses/<course_id>/instructors", methods=["GET"])
+def get_course_instructors(course_id):
+    """Get instructors assigned to a course (admin only)"""
+    try:
+        admin_user_id = request.args.get("admin_user_id")
+        ok, err = require_admin(admin_user_id)
+        if not ok:
+            return err
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT u.user_id, u.name
+            FROM public.teaches t
+            JOIN public.users u ON t.instructor_id = u.user_id
+            WHERE t.course_id = %s::uuid
+            ORDER BY u.name
+        """, (course_id,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        instructors = [{"user_id": str(r[0]), "name": r[1]} for r in rows]
+        return jsonify({"success": True, "instructors": instructors})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/admin/courses/<course_id>/instructors/<instructor_id>", methods=["DELETE"])
+def remove_course_instructor(course_id, instructor_id):
+    """Remove an instructor from a course (admin only)"""
+    try:
+        admin_user_id = request.args.get("admin_user_id")
+        ok, err = require_admin(admin_user_id)
+        if not ok:
+            return err
+
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM public.teaches
+            WHERE course_id = %s::uuid AND instructor_id = %s::uuid
+            RETURNING course_id
+        """, (course_id, instructor_id))
+        if cur.rowcount == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Assignment not found"}), 404
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "message": "Instructor removed from course"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/admin/courses/<course_id>", methods=["PUT"])
 def update_course(course_id):
-    """Update a course (admin only)"""
+    """Update a course (admin only). Can update university name/ranking."""
     try:
         data = request.get_json()
         admin_user_id = data.get("admin_user_id")
@@ -705,11 +868,13 @@ def update_course(course_id):
         level = data.get("level")
         description = data.get("description")
         fees = data.get("fees")
+        university_name = (data.get("university_name") or "").strip() if data.get("university_name") is not None else None
+        university_ranking = data.get("university_ranking")
 
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.execute("SELECT course_id, title, duration, level, description, fees FROM public.course WHERE course_id = %s::uuid", (course_id,))
+        cur.execute("SELECT course_id, title, duration, level, description, fees, university_id FROM public.course WHERE course_id = %s::uuid", (course_id,))
         row = cur.fetchone()
         if not row:
             cur.close()
@@ -721,17 +886,39 @@ def update_course(course_id):
         new_level = level if level is not None else row[3]
         new_description = description if description is not None else row[4]
         new_fees = fees if fees is not None else row[5]
+        current_university_id = row[6]
 
         if not new_title:
             cur.close()
             conn.close()
             return jsonify({"error": "title cannot be empty"}), 400
 
-        cur.execute("""
-            UPDATE public.course
-            SET title = %s, duration = %s, level = %s, description = %s, fees = %s
-            WHERE course_id = %s::uuid
-        """, (new_title, new_duration or "", new_level or "beginner", new_description or "", new_fees, course_id))
+        # Update university if provided
+        if university_name is not None:
+            if university_name == "":
+                new_university_id = None
+            else:
+                cur.execute("SELECT university_id FROM public.university WHERE name = %s", (university_name,))
+                un_row = cur.fetchone()
+                if un_row:
+                    new_university_id = un_row[0]
+                    if university_ranking is not None:
+                        cur.execute("UPDATE public.university SET ranking = %s WHERE university_id = %s", (university_ranking, new_university_id))
+                else:
+                    cur.execute("""
+                        INSERT INTO public.university (name, ranking)
+                        VALUES (%s, %s)
+                        RETURNING university_id
+                    """, (university_name, university_ranking))
+                    new_university_id = cur.fetchone()[0]
+            cur.execute("UPDATE public.course SET title = %s, duration = %s, level = %s, description = %s, fees = %s, university_id = %s WHERE course_id = %s::uuid",
+                        (new_title, new_duration or "", new_level or "beginner", new_description or "", new_fees, new_university_id, course_id))
+        else:
+            cur.execute("""
+                UPDATE public.course
+                SET title = %s, duration = %s, level = %s, description = %s, fees = %s
+                WHERE course_id = %s::uuid
+            """, (new_title, new_duration or "", new_level or "beginner", new_description or "", new_fees, course_id))
 
         conn.commit()
         cur.close()

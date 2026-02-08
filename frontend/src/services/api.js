@@ -111,6 +111,27 @@ export const adminAPI = {
     return response.data;
   },
 
+  deleteCourse: async (admin_user_id, course_id) => {
+    const response = await api.delete(`/admin/courses/${course_id}`, {
+      params: { admin_user_id },
+    });
+    return response.data;
+  },
+
+  getCourseInstructors: async (admin_user_id, course_id) => {
+    const response = await api.get(`/admin/courses/${course_id}/instructors`, {
+      params: { admin_user_id },
+    });
+    return response.data;
+  },
+
+  removeCourseInstructor: async (admin_user_id, course_id, instructor_id) => {
+    const response = await api.delete(`/admin/courses/${course_id}/instructors/${instructor_id}`, {
+      params: { admin_user_id },
+    });
+    return response.data;
+  },
+
   getInstructors: async () => {
     const response = await api.get('/admin/instructors');
     return response.data;

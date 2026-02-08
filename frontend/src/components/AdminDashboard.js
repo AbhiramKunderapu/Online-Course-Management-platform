@@ -16,7 +16,9 @@ function AdminDashboard({ user, onLogout }) {
     duration: '',
     level: 'beginner',
     description: '',
-    fees: ''
+    fees: '',
+    university_name: '',
+    university_ranking: ''
   });
   const [addCourseLoading, setAddCourseLoading] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
@@ -25,9 +27,15 @@ function AdminDashboard({ user, onLogout }) {
     duration: '',
     level: 'beginner',
     description: '',
-    fees: ''
+    fees: '',
+    university_name: '',
+    university_ranking: ''
   });
   const [editCourseLoading, setEditCourseLoading] = useState(false);
+  const [courseInstructors, setCourseInstructors] = useState([]);
+  const [deleteCourseLoading, setDeleteCourseLoading] = useState(false);
+  const [instructorSearch, setInstructorSearch] = useState('');
+  const [courseSearch, setCourseSearch] = useState('');
 
   useEffect(() => {
     loadDashboardData();
@@ -127,6 +135,10 @@ function AdminDashboard({ user, onLogout }) {
 
   const handleAddCourse = async (e) => {
     e.preventDefault();
+    if (!addCourseForm.university_name || !addCourseForm.university_name.trim()) {
+      alert('University name is required');
+      return;
+    }
     setAddCourseLoading(true);
     try {
       const response = await adminAPI.createCourse(user.user_id, {
@@ -134,12 +146,14 @@ function AdminDashboard({ user, onLogout }) {
         duration: addCourseForm.duration,
         level: addCourseForm.level,
         description: addCourseForm.description,
-        fees: addCourseForm.fees ? parseFloat(addCourseForm.fees) : null
+        fees: addCourseForm.fees ? parseFloat(addCourseForm.fees) : null,
+        university_name: addCourseForm.university_name.trim(),
+        university_ranking: addCourseForm.university_ranking ? parseInt(addCourseForm.university_ranking, 10) : null
       });
       if (response.success) {
         alert('Course created successfully!');
         setShowAddCourse(false);
-        setAddCourseForm({ title: '', duration: '', level: 'beginner', description: '', fees: '' });
+        setAddCourseForm({ title: '', duration: '', level: 'beginner', description: '', fees: '', university_name: '', university_ranking: '' });
         loadCourses();
         loadDashboardData();
       }
@@ -150,20 +164,64 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  const openEditCourse = (course) => {
+  const openEditCourse = async (course) => {
     setEditingCourse(course);
     setEditCourseForm({
       title: course.title || '',
       duration: course.duration || '',
       level: course.level || 'beginner',
       description: course.description || '',
-      fees: course.fees != null ? String(course.fees) : ''
+      fees: course.fees != null ? String(course.fees) : '',
+      university_name: course.university_name || '',
+      university_ranking: course.university_ranking != null ? String(course.university_ranking) : ''
     });
+    try {
+      const res = await adminAPI.getCourseInstructors(user.user_id, course.course_id);
+      if (res.success) setCourseInstructors(res.instructors || []);
+      else setCourseInstructors([]);
+    } catch {
+      setCourseInstructors([]);
+    }
   };
 
   const closeEditCourse = () => {
     setEditingCourse(null);
-    setEditCourseForm({ title: '', duration: '', level: 'beginner', description: '', fees: '' });
+    setCourseInstructors([]);
+    setEditCourseForm({ title: '', duration: '', level: 'beginner', description: '', fees: '', university_name: '', university_ranking: '' });
+  };
+
+  const handleDeleteCourse = async () => {
+    if (!editingCourse) return;
+    if (!window.confirm(`Delete course "${editingCourse.title}"? This will remove all enrollments and course content.`)) return;
+    setDeleteCourseLoading(true);
+    try {
+      const response = await adminAPI.deleteCourse(user.user_id, editingCourse.course_id);
+      if (response.success) {
+        alert('Course deleted');
+        closeEditCourse();
+        loadCourses();
+        loadDashboardData();
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to delete course');
+    } finally {
+      setDeleteCourseLoading(false);
+    }
+  };
+
+  const handleRemoveInstructor = async (instructorId) => {
+    if (!editingCourse) return;
+    if (!window.confirm('Remove this instructor from the course?')) return;
+    try {
+      const response = await adminAPI.removeCourseInstructor(user.user_id, editingCourse.course_id, instructorId);
+      if (response.success) {
+        const res = await adminAPI.getCourseInstructors(user.user_id, editingCourse.course_id);
+        if (res.success) setCourseInstructors(res.instructors || []);
+        loadCourses();
+      }
+    } catch (error) {
+      alert(error.response?.data?.error || 'Failed to remove instructor');
+    }
   };
 
   const handleUpdateCourse = async (e) => {
@@ -176,7 +234,9 @@ function AdminDashboard({ user, onLogout }) {
         duration: editCourseForm.duration,
         level: editCourseForm.level,
         description: editCourseForm.description,
-        fees: editCourseForm.fees ? parseFloat(editCourseForm.fees) : null
+        fees: editCourseForm.fees ? parseFloat(editCourseForm.fees) : null,
+        university_name: editCourseForm.university_name != null ? editCourseForm.university_name.trim() : undefined,
+        university_ranking: editCourseForm.university_ranking ? parseInt(editCourseForm.university_ranking, 10) : null
       });
       if (response.success) {
         alert('Course updated successfully!');
@@ -352,7 +412,7 @@ function AdminDashboard({ user, onLogout }) {
                       </select>
                     </div>
                     <div className="form-group">
-                      <label>Fees ($)</label>
+                      <label>Fees (₹)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -361,6 +421,30 @@ function AdminDashboard({ user, onLogout }) {
                         value={addCourseForm.fees}
                         onChange={(e) => setAddCourseForm({ ...addCourseForm, fees: e.target.value })}
                         placeholder="0 for free"
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>University Name *</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={addCourseForm.university_name}
+                        onChange={(e) => setAddCourseForm({ ...addCourseForm, university_name: e.target.value })}
+                        placeholder="e.g., MIT"
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>University Ranking</label>
+                      <input
+                        type="number"
+                        min="1"
+                        className="input"
+                        value={addCourseForm.university_ranking}
+                        onChange={(e) => setAddCourseForm({ ...addCourseForm, university_ranking: e.target.value })}
+                        placeholder="e.g., 1"
                       />
                     </div>
                   </div>
@@ -391,9 +475,16 @@ function AdminDashboard({ user, onLogout }) {
                       onClick={() => openEditCourse(course)}
                     >
                       <h4>{course.title}</h4>
+                      {course.university_name && (
+                        <p className="course-meta">
+                          Offered by: {course.university_name}
+                          {course.university_ranking != null && ` (Rank #${course.university_ranking})`}
+                        </p>
+                      )}
+                      {course.instructor_names && <p className="course-meta">Taught by: {course.instructor_names}</p>}
                       <p className="course-level">{course.level}</p>
                       <p className="course-duration">Duration: {course.duration || '—'}</p>
-                      {course.fees != null && <p className="course-fees">${course.fees}</p>}
+                      {course.fees != null && <p className="course-fees">₹{course.fees}</p>}
                     </div>
                   ))
                 )}
@@ -444,7 +535,7 @@ function AdminDashboard({ user, onLogout }) {
                       </select>
                     </div>
                     <div className="form-group">
-                      <label>Fees ($)</label>
+                      <label>Fees (₹)</label>
                       <input
                         type="number"
                         step="0.01"
@@ -453,6 +544,31 @@ function AdminDashboard({ user, onLogout }) {
                         value={editCourseForm.fees}
                         onChange={(e) => setEditCourseForm({ ...editCourseForm, fees: e.target.value })}
                         placeholder="0 for free"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>University Name</label>
+                      <input
+                        type="text"
+                        className="input"
+                        value={editCourseForm.university_name}
+                        onChange={(e) => setEditCourseForm({ ...editCourseForm, university_name: e.target.value })}
+                        placeholder="e.g., MIT"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>University Ranking</label>
+                      <input
+                        type="number"
+                        min="1"
+                        className="input"
+                        value={editCourseForm.university_ranking}
+                        onChange={(e) => setEditCourseForm({ ...editCourseForm, university_ranking: e.target.value })}
+                        placeholder="e.g., 1"
                         onClick={(e) => e.stopPropagation()}
                       />
                     </div>
@@ -468,9 +584,31 @@ function AdminDashboard({ user, onLogout }) {
                       onClick={(e) => e.stopPropagation()}
                     />
                   </div>
-                  <button type="submit" className="btn btn-primary" disabled={editCourseLoading}>
-                    {editCourseLoading ? 'Saving...' : 'Save Changes'}
-                  </button>
+                  <div className="form-group">
+                    <label>Instructors</label>
+                    {courseInstructors.length === 0 ? (
+                      <p className="course-meta">No instructors assigned. Use &quot;Assign Instructors&quot; tab to add.</p>
+                    ) : (
+                      <ul className="course-instructors-list">
+                        {courseInstructors.map((inst) => (
+                          <li key={inst.user_id}>
+                            Prof. {inst.name}
+                            <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); handleRemoveInstructor(inst.user_id); }} style={{ marginLeft: '8px' }}>
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="edit-course-actions">
+                    <button type="submit" className="btn btn-primary" disabled={editCourseLoading}>
+                      {editCourseLoading ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button type="button" className="btn btn-danger" onClick={(e) => { e.stopPropagation(); handleDeleteCourse(); }} disabled={deleteCourseLoading}>
+                      {deleteCourseLoading ? 'Deleting...' : 'Delete Course'}
+                    </button>
+                  </div>
                 </form>
               )}
             </div>
@@ -482,41 +620,81 @@ function AdminDashboard({ user, onLogout }) {
               <form onSubmit={handleAssignInstructor} className="card">
                 <div className="form-group">
                   <label>Select Instructor</label>
-                  <select
+                  <input
+                    type="text"
                     className="input"
-                    value={assignForm.instructor_id}
-                    onChange={(e) =>
-                      setAssignForm({ ...assignForm, instructor_id: e.target.value })
-                    }
-                    required
-                  >
-                    <option value="">Select an instructor</option>
-                    {instructors.map((instructor) => (
-                      <option key={instructor.user_id} value={instructor.user_id}>
-                        {instructor.name} ({instructor.branch}, {instructor.phone_number})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Search by name, branch, or phone..."
+                    value={instructorSearch}
+                    onChange={(e) => setInstructorSearch(e.target.value)}
+                  />
+                  <div className="searchable-list">
+                    {instructors
+                      .filter((instructor) => {
+                        const q = (instructorSearch || '').toLowerCase();
+                        if (!q) return true;
+                        const name = (instructor.name || '').toLowerCase();
+                        const branch = (instructor.branch || '').toLowerCase();
+                        const phone = (instructor.phone_number || '').toLowerCase();
+                        return name.includes(q) || branch.includes(q) || phone.includes(q);
+                      })
+                      .map((instructor) => (
+                        <div
+                          key={instructor.user_id}
+                          className={`searchable-list-item ${assignForm.instructor_id === instructor.user_id ? 'selected' : ''}`}
+                          onClick={() => setAssignForm({ ...assignForm, instructor_id: instructor.user_id })}
+                        >
+                          <strong>Prof. {instructor.name}</strong>
+                          {(instructor.branch || instructor.phone_number) && (
+                            <span className="searchable-list-meta">
+                              {[instructor.branch, instructor.phone_number].filter(Boolean).join(' · ')}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                  {assignForm.instructor_id && (
+                    <p className="form-hint">Selected: Prof. {instructors.find((i) => i.user_id === assignForm.instructor_id)?.name}</p>
+                  )}
                 </div>
                 <div className="form-group">
                   <label>Select Course</label>
-                  <select
+                  <input
+                    type="text"
                     className="input"
-                    value={assignForm.course_id}
-                    onChange={(e) =>
-                      setAssignForm({ ...assignForm, course_id: e.target.value })
-                    }
-                    required
-                  >
-                    <option value="">Select a course</option>
-                    {courses.map((course) => (
-                      <option key={course.course_id} value={course.course_id}>
-                        {course.title} ({course.level})
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Search by title, university, or instructor..."
+                    value={courseSearch}
+                    onChange={(e) => setCourseSearch(e.target.value)}
+                  />
+                  <div className="searchable-list">
+                    {courses
+                      .filter((course) => {
+                        const q = (courseSearch || '').toLowerCase();
+                        if (!q) return true;
+                        const title = (course.title || '').toLowerCase();
+                        const univ = (course.university_name || '').toLowerCase();
+                        const inst = (course.instructor_names || '').toLowerCase();
+                        return title.includes(q) || univ.includes(q) || inst.includes(q);
+                      })
+                      .map((course) => (
+                        <div
+                          key={course.course_id}
+                          className={`searchable-list-item ${assignForm.course_id === course.course_id ? 'selected' : ''}`}
+                          onClick={() => setAssignForm({ ...assignForm, course_id: course.course_id })}
+                        >
+                          <strong>{course.title}</strong>
+                          <span className="searchable-list-meta">
+                            {course.level}
+                            {course.university_name && ` · ${course.university_name}`}
+                            {course.instructor_names && ` · ${course.instructor_names}`}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  {assignForm.course_id && (
+                    <p className="form-hint">Selected: {courses.find((c) => c.course_id === assignForm.course_id)?.title}</p>
+                  )}
                 </div>
-                <button type="submit" className="btn btn-primary">
+                <button type="submit" className="btn btn-primary" disabled={!assignForm.instructor_id || !assignForm.course_id}>
                   Assign Instructor
                 </button>
               </form>

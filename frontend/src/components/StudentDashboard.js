@@ -19,6 +19,8 @@ function StudentDashboard({ user, onLogout }) {
   const [submittingFor, setSubmittingFor] = useState(null);
   const [submitUrl, setSubmitUrl] = useState('');
   const [announcements, setAnnouncements] = useState([]);
+  const [browseSearch, setBrowseSearch] = useState('');
+  const [browseLevelFilter, setBrowseLevelFilter] = useState('all');
 
   useEffect(() => {
     loadDashboardData();
@@ -336,6 +338,8 @@ function StudentDashboard({ user, onLogout }) {
                   <thead>
                     <tr>
                       <th>Course</th>
+                      <th>University</th>
+                      <th>Instructor</th>
                       <th>Duration</th>
                       <th>Level</th>
                       <th>Status</th>
@@ -347,6 +351,8 @@ function StudentDashboard({ user, onLogout }) {
                     {allEnrolledCourses.map((course) => (
                       <tr key={course.course_id}>
                         <td>{course.title}</td>
+                        <td>{course.university_name ? `${course.university_name}${course.university_ranking != null ? ` (Rank #${course.university_ranking})` : ''}` : '—'}</td>
+                        <td>{course.instructor_names || '—'}</td>
                         <td>{course.duration}</td>
                         <td>{course.level}</td>
                         <td>
@@ -376,6 +382,10 @@ function StudentDashboard({ user, onLogout }) {
                   {activeCourses.map((course) => (
                     <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); loadAnnouncements(course.course_id); }}>
                       <h3>{course.title}</h3>
+                      {course.university_name && (
+                        <p className="course-meta">Offered by: {course.university_name}{course.university_ranking != null ? ` (Rank #${course.university_ranking})` : ''}</p>
+                      )}
+                      {course.instructor_names && <p className="course-meta">Taught by: {course.instructor_names}</p>}
                       <p className="course-level">{course.level}</p>
                       <p className="course-duration">Duration: {course.duration}</p>
                       <p className="course-action-hint">Click to view content, assignments & marks</p>
@@ -386,6 +396,16 @@ function StudentDashboard({ user, onLogout }) {
                 <div className="student-course-view">
                   <div className="student-course-header">
                     <h3>{activeCourses.find(c => c.course_id === selectedActiveCourse)?.title}</h3>
+                    {(() => {
+                      const c = activeCourses.find(c => c.course_id === selectedActiveCourse);
+                      return (c?.university_name || c?.instructor_names) ? (
+                        <p className="course-meta" style={{ marginTop: '4px' }}>
+                          {c?.university_name && <>Offered by: {c.university_name}{c?.university_ranking != null ? ` (Rank #${c.university_ranking})` : ''}</>}
+                          {c?.university_name && c?.instructor_names && ' · '}
+                          {c?.instructor_names && <>Taught by: {c.instructor_names}</>}
+                        </p>
+                      ) : null;
+                    })()}
                     <button className="btn btn-secondary" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); setAnnouncements([]); }}>← Back to Courses</button>
                   </div>
 
@@ -489,6 +509,8 @@ function StudentDashboard({ user, onLogout }) {
                   <thead>
                     <tr>
                       <th>Course</th>
+                      <th>University</th>
+                      <th>Instructor</th>
                       <th>Duration</th>
                       <th>Level</th>
                       <th>Completion Date</th>
@@ -499,6 +521,8 @@ function StudentDashboard({ user, onLogout }) {
                     {completedCourses.map((course) => (
                       <tr key={course.course_id}>
                         <td>{course.title}</td>
+                        <td>{course.university_name ? `${course.university_name}${course.university_ranking != null ? ` (Rank #${course.university_ranking})` : ''}` : '—'}</td>
+                        <td>{course.instructor_names || '—'}</td>
                         <td>{course.duration}</td>
                         <td>{course.level}</td>
                         <td>{course.completion_date || course.enroll_date}</td>
@@ -519,11 +543,47 @@ function StudentDashboard({ user, onLogout }) {
             <div>
               <h2>Browse Courses</h2>
               <p className="browse-subtitle">Explore all available courses and enroll in the ones you're interested in.</p>
+              <div className="browse-filters">
+                <input
+                  type="text"
+                  className="input browse-search-input"
+                  placeholder="Search by course name, university, or instructor..."
+                  value={browseSearch}
+                  onChange={(e) => setBrowseSearch(e.target.value)}
+                />
+                <div className="browse-level-filters">
+                  <span className="filter-label">Level:</span>
+                  {['all', 'beginner', 'intermediate', 'advanced'].map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      className={`btn btn-filter ${browseLevelFilter === level ? 'active' : ''}`}
+                      onClick={() => setBrowseLevelFilter(level)}
+                    >
+                      {level === 'all' ? 'All' : level.charAt(0).toUpperCase() + level.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="courses-grid browse-courses">
                 {courses.length === 0 ? (
                   <p className="empty-state">No courses available. Check back later!</p>
-                ) : (
-                  courses.map((course) => {
+                ) : (() => {
+                  const filtered = courses.filter((course) => {
+                    const levelOk = browseLevelFilter === 'all' || (course.level || '').toLowerCase() === browseLevelFilter;
+                    const q = (browseSearch || '').toLowerCase().trim();
+                    const searchOk = !q || [
+                      course.title,
+                      course.university_name,
+                      course.instructor_names,
+                      course.description
+                    ].some((s) => (s || '').toLowerCase().includes(q));
+                    return levelOk && searchOk;
+                  });
+                  return filtered.length === 0 ? (
+                    <p className="empty-state">No courses match your search or filters. Try changing the level or search text.</p>
+                  ) : (
+                  filtered.map((course) => {
                     const isEnrolled = allEnrolledCourses.some(
                       (e) => e.course_id === course.course_id
                     );
@@ -533,9 +593,13 @@ function StudentDashboard({ user, onLogout }) {
                           <h3>{course.title}</h3>
                           <span className="course-level">{course.level}</span>
                         </div>
+                        {course.university_name && (
+                          <p className="course-meta">Offered by: {course.university_name}{course.university_ranking != null ? ` (Rank #${course.university_ranking})` : ''}</p>
+                        )}
+                        {course.instructor_names && <p className="course-meta">Taught by: {course.instructor_names}</p>}
                         <p className="course-duration">Duration: {course.duration || '—'}</p>
                         <p className={`course-fees ${!course.fees ? 'free' : ''}`}>
-                          {course.fees ? `$${course.fees}` : 'Free'}
+                          {course.fees ? `₹${course.fees}` : 'Free'}
                         </p>
                         {course.description && (
                           <p className="course-description">{course.description}</p>
@@ -552,8 +616,8 @@ function StudentDashboard({ user, onLogout }) {
                         )}
                       </div>
                     );
-                  })
-                )}
+                  }));
+                })()}
               </div>
             </div>
           )}

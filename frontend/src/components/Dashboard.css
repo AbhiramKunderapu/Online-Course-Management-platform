@@ -257,6 +257,134 @@
   margin-bottom: 8px;
 }
 
+.course-meta {
+  color: #475569;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.course-instructors-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px 0;
+}
+
+.course-instructors-list li {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.course-instructors-list li:last-child {
+  border-bottom: none;
+}
+
+.edit-course-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.edit-course-actions .btn-danger {
+  margin-left: 0;
+}
+
+/* Searchable list (Assign Instructor) */
+.searchable-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-top: 8px;
+  background: #fff;
+}
+
+.searchable-list-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.15s;
+}
+
+.searchable-list-item:last-child {
+  border-bottom: none;
+}
+
+.searchable-list-item:hover {
+  background: #f8fafc;
+}
+
+.searchable-list-item.selected {
+  background: #e0f2fe;
+  border-left: 3px solid #0284c7;
+}
+
+.searchable-list-meta {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.form-hint {
+  font-size: 13px;
+  color: #0284c7;
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+
+/* Browse filters (Student) */
+.browse-filters {
+  margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.browse-search-input {
+  flex: 1;
+  min-width: 260px;
+  max-width: 400px;
+}
+
+.browse-level-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #475569;
+}
+
+.btn-filter {
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-filter:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.btn-filter.active {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #fff;
+}
+
 .course-fees {
   color: #1e293b;
   font-size: 18px;
