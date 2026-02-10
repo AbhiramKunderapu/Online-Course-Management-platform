@@ -1,7 +1,15 @@
 .dashboard-container {
   display: flex;
   min-height: 100vh;
-  background: #f0f9ff;
+}
+
+.dashboard-container.light {
+  background: radial-gradient(circle at top left, #e0f2fe 0, #f0f9ff 45%, #e5f9ff 100%);
+}
+
+.dashboard-container.dark {
+  background: radial-gradient(circle at top left, #0f172a 0, #020617 45%, #000000 100%);
+  color: #e5e7eb;
 }
 
 .sidebar {
@@ -71,6 +79,10 @@
   padding: 24px 40px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .dashboard-header h1 {
@@ -78,6 +90,26 @@
   color: #1e293b;
   margin: 0;
   font-weight: 700;
+}
+
+.btn-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 140px;
+  width: auto;
+  padding: 4px 10px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%);
+  border: none;
+  color: #f9fafb;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.btn-theme-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.45);
 }
 
 .dashboard-content {
@@ -1189,6 +1221,88 @@
   font-size: 16px;
   color: #1e293b;
   font-weight: 600;
+}
+
+/* Dark mode overrides */
+.dashboard-container.dark .dashboard-header {
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.8);
+}
+
+.dashboard-container.dark .dashboard-header h1 {
+  color: #e5e7eb;
+}
+
+.dashboard-container.dark .dashboard-content h2 {
+  color: #e5e7eb;
+}
+
+.dashboard-container.dark .stat-card,
+.dashboard-container.dark .course-card,
+.dashboard-container.dark .student-course-view,
+.dashboard-container.dark .course-management-view,
+.dashboard-container.dark .assignment-create-card,
+.dashboard-container.dark .assignment-list-card,
+.dashboard-container.dark .analyst-chart-card,
+.dashboard-container.dark .card {
+  background: radial-gradient(circle at top left, #020617 0, #020617 45%, #020617 100%);
+  border-color: #1e293b;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.85);
+}
+
+.dashboard-container.dark .stat-card h3,
+.dashboard-container.dark .course-card h3,
+.dashboard-container.dark .course-card h4,
+.dashboard-container.dark .student-course-header h3,
+.dashboard-container.dark .analyst-chart-card h3 {
+  color: #e5e7eb;
+}
+
+.dashboard-container.dark .stat-card .value,
+.dashboard-container.dark .student-total-marks {
+  color: #38bdf8;
+}
+
+.dashboard-container.dark .table {
+  background: #020617;
+}
+
+.dashboard-container.dark .table td {
+  color: #e5e7eb;
+  border-bottom-color: #1e293b;
+}
+
+.dashboard-container.dark .table tbody tr:hover {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.dashboard-container.dark .course-duration,
+.dashboard-container.dark .course-meta,
+.dashboard-container.dark .browse-subtitle,
+.dashboard-container.dark .student-assignment-desc,
+.dashboard-container.dark .analyst-subtitle {
+  color: #9ca3af;
+}
+
+.dashboard-container.dark .student-module-block,
+.dashboard-container.dark .student-assignment-block,
+.dashboard-container.dark .announcement-item,
+.dashboard-container.dark .assignment-list-item {
+  background: #020617;
+  border-color: #1f2937;
+}
+
+.dashboard-container.dark .student-content-item {
+  background: #020617;
+  border-color: #1f2937;
+}
+
+.dashboard-container.dark .student-content-title {
+  color: #e5e7eb;
+}
+
+.dashboard-container.dark .analyst-no-data {
+  color: #9ca3af;
 }
 
 .chart-wrap {

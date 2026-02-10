@@ -12,7 +12,7 @@ function InstructorDashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [courseActionTab, setCourseActionTab] = useState('modules');
-  const [gradingForm, setGradingForm] = useState({ student_id: '', grade: '', status: 'completed' });
+  const [gradingForm, setGradingForm] = useState({ student_id: '', grade: '' });
   const [contentForm, setContentForm] = useState({ course_id: '', module_number: '', title: '', type: 'video', url: '' });
   const [moduleForm, setModuleForm] = useState({ course_id: '', module_number: '', name: '', duration: '' });
   const [assignmentForm, setAssignmentForm] = useState({ course_id: '', title: '', assignment_url: '', description: '', due_date: '', max_marks: 20 });
@@ -26,6 +26,7 @@ function InstructorDashboard({ user, onLogout }) {
   const [announcementForm, setAnnouncementForm] = useState({ title: '', content: '' });
   const [toast, setToast] = useState(null);
   const [courseSearch, setCourseSearch] = useState('');
+  const [theme, setTheme] = useState('light');
 
   const showToast = (type, message, title) => {
     setToast({ type, message, title });
@@ -145,12 +146,11 @@ function InstructorDashboard({ user, onLogout }) {
         user.user_id,
         selectedCourse,
         gradingForm.student_id,
-        gradingForm.grade,
-        gradingForm.status
+        gradingForm.grade
       );
       if (response.success) {
         showToast('success', 'Student graded successfully!');
-        setGradingForm({ student_id: '', grade: '', status: 'completed' });
+        setGradingForm({ student_id: '', grade: '' });
         loadCourseStudents(selectedCourse);
         loadDashboardData();
       }
@@ -366,12 +366,16 @@ function InstructorDashboard({ user, onLogout }) {
   };
   
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
 
   return (
-    <div className="dashboard-container">
+    <div className={`dashboard-container ${theme === 'dark' ? 'dark' : 'light'}`}>
       <Toast toast={toast} onClose={() => setToast(null)} />
       <div className="sidebar">
         <h2>🎓 CourseHub</h2>
@@ -384,6 +388,13 @@ function InstructorDashboard({ user, onLogout }) {
       <div className="main-content">
         <div className="dashboard-header">
           <h1>Welcome, {user.name}!</h1>
+          <button
+            type="button"
+            className="btn btn-secondary btn-theme-toggle"
+            onClick={toggleTheme}
+          >
+            {theme === 'dark' ? '🌞 Light' : '🌙 Dark'}
+          </button>
         </div>
 
         <div className="dashboard-content">
@@ -719,7 +730,9 @@ function InstructorDashboard({ user, onLogout }) {
                               <label>Select Student</label>
                               <select className="input" value={gradingForm.student_id} onChange={(e) => setGradingForm({ ...gradingForm, student_id: e.target.value })} required>
                                 <option value="">Select...</option>
-                                {students.filter(s => s.status === 'ongoing' || s.status === 'completed').map((s) => (
+                                {students
+                                  .filter(s => s.status === 'ongoing' && !s.grade)
+                                  .map((s) => (
                                   <option key={s.user_id} value={s.user_id}>{s.name} {s.assignment_percent != null ? `(${s.assignment_percent}%)` : ''}</option>
                                 ))}
                               </select>
@@ -728,13 +741,6 @@ function InstructorDashboard({ user, onLogout }) {
                               <div className="form-group">
                                 <label>Grade</label>
                                 <input type="text" className="input" value={gradingForm.grade} onChange={(e) => setGradingForm({ ...gradingForm, grade: e.target.value })} placeholder="e.g., A, B+" required />
-                              </div>
-                              <div className="form-group">
-                                <label>Status</label>
-                                <select className="input" value={gradingForm.status} onChange={(e) => setGradingForm({ ...gradingForm, status: e.target.value })}>
-                                  <option value="completed">Completed</option>
-                                  <option value="ongoing">Ongoing</option>
-                                </select>
                               </div>
                             </div>
                             <button type="submit" className="btn btn-primary">Submit Grade</button>

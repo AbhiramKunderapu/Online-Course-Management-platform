@@ -28,6 +28,7 @@ function StudentDashboard({ user, onLogout }) {
   const [showInsights, setShowInsights] = useState(false);
   const [moduleSearch, setModuleSearch] = useState('');
   const [selectedModule, setSelectedModule] = useState('');
+  const [theme, setTheme] = useState('light');
 
   const showToast = (type, message, title) => {
     setToast({ type, message, title });
@@ -225,8 +226,12 @@ function StudentDashboard({ user, onLogout }) {
     return <div className="loading">Loading...</div>;
   }
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   return (
-    <div className="dashboard-container">
+    <div className={`dashboard-container ${theme === 'dark' ? 'dark' : 'light'}`}>
       <Toast toast={toast} onClose={() => setToast(null)} />
       <div className="sidebar">
         <h2>🎓 CourseHub</h2>
@@ -242,6 +247,13 @@ function StudentDashboard({ user, onLogout }) {
       <div className="main-content">
         <div className="dashboard-header">
           <h1>Welcome, {user.name}!</h1>
+          <button
+            type="button"
+            className="btn btn-secondary btn-theme-toggle"
+            onClick={toggleTheme}
+          >
+            {theme === 'dark' ? '🌞 Light' : '🌙 Dark'}
+          </button>
         </div>
 
         <div className="dashboard-content">
@@ -559,6 +571,27 @@ function StudentDashboard({ user, onLogout }) {
                           );
                         })()}
                       </>
+                    )}
+                  </div>
+
+                  <div className="student-course-section student-announcements-section">
+                    <h3>Announcements</h3>
+                    {announcements.length === 0 ? (
+                      <p style={{ color: '#64748b', margin: 0 }}>No announcements for this course yet.</p>
+                    ) : (
+                      <div className="announcements-list">
+                        {announcements.map((a) => (
+                          <div key={a.announcement_id} className="announcement-item">
+                            <h4>{a.title}</h4>
+                            {a.content && <p>{a.content}</p>}
+                            <div className="announcement-footer">
+                              <span className="announcement-date">
+                                {a.created_at ? new Date(a.created_at).toLocaleString() : ''}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
 

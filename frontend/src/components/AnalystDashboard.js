@@ -26,6 +26,8 @@ function AnalystDashboard({ user, onLogout }) {
   const [courseAnalytics, setCourseAnalytics] = useState(null);
   const [loadingCourseAnalytics, setLoadingCourseAnalytics] = useState(false);
   const [publishToStudents, setPublishToStudents] = useState(false);
+  const [theme, setTheme] = useState('light');
+  const [courseSearch, setCourseSearch] = useState('');
 
   useEffect(() => {
     loadData();
@@ -80,12 +82,16 @@ function AnalystDashboard({ user, onLogout }) {
     }
   };
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  };
+
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
 
   return (
-    <div className="dashboard-container">
+    <div className={`dashboard-container ${theme === 'dark' ? 'dark' : 'light'}`}>
       <div className="sidebar">
         <h2>🎓 CourseHub</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
@@ -98,6 +104,13 @@ function AnalystDashboard({ user, onLogout }) {
       <div className="main-content">
         <div className="dashboard-header">
           <h1>Welcome, {user.name}!</h1>
+          <button
+            type="button"
+            className="btn btn-secondary btn-theme-toggle"
+            onClick={toggleTheme}
+          >
+            {theme === 'dark' ? '🌞 Light' : '🌙 Dark'}
+          </button>
         </div>
 
         <div className="dashboard-content analyst-content">
@@ -128,6 +141,12 @@ function AnalystDashboard({ user, onLogout }) {
                 <div className="stat-card">
                   <h3>Total Assignments</h3>
                   <div className="value">{overview?.total_assignments || 0}</div>
+                </div>
+                <div className="stat-card">
+                  <h3>Total Revenue</h3>
+                  <div className="value">
+                    ₹{(overview?.total_revenue || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </div>
                 </div>
               </div>
               {insights?.grade_distribution_platform?.length > 0 && (
@@ -202,6 +221,160 @@ function AnalystDashboard({ user, onLogout }) {
                 </div>
               )}
 
+              {insights?.students_by_country?.length > 0 && (
+                <div className="analyst-chart-card">
+                  <h3>Students by Country (Top 10)</h3>
+                  <p className="analyst-subtitle">Where your enrolled students are coming from.</p>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart
+                        data={insights.students_by_country}
+                        margin={{ top: 12, right: 12, bottom: 40, left: 12 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis
+                          dataKey="country"
+                          tick={{ fontSize: 11 }}
+                          angle={-35}
+                          textAnchor="end"
+                          interval={0}
+                        />
+                        <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="count" name="Students" fill="#f97316" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {insights?.courses_by_university?.length > 0 && (
+                <div className="analyst-chart-card">
+                  <h3>Courses per University</h3>
+                  <p className="analyst-subtitle">Which universities are most active on the platform.</p>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart
+                        data={insights.courses_by_university}
+                        margin={{ top: 12, right: 12, bottom: 40, left: 12 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis
+                          dataKey="university"
+                          tick={{ fontSize: 11 }}
+                          angle={-30}
+                          textAnchor="end"
+                          interval={0}
+                        />
+                        <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="courses" name="Courses" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {insights?.revenue_by_level?.length > 0 && (
+                <div className="analyst-chart-card">
+                  <h3>Revenue by Course Level</h3>
+                  <p className="analyst-subtitle">Estimated revenue split across beginner, intermediate and advanced courses.</p>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart
+                        data={insights.revenue_by_level}
+                        margin={{ top: 12, right: 12, bottom: 12, left: 12 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis dataKey="level" tick={{ fontSize: 12 }} />
+                        <YAxis
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                        />
+                        <Tooltip
+                          formatter={(value) => [
+                            `₹${Number(value).toLocaleString()}`,
+                            'Revenue',
+                          ]}
+                        />
+                        <Bar dataKey="revenue" name="Revenue" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {insights?.top_revenue_courses?.length > 0 && (
+                <div className="analyst-chart-card">
+                  <h3>Top 5 Revenue-Generating Courses</h3>
+                  <p className="analyst-subtitle">Courses that bring in the highest total fee revenue.</p>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart
+                        data={insights.top_revenue_courses.map((c) => ({
+                          ...c,
+                          name: c.title.length > 25 ? c.title.slice(0, 25) + '…' : c.title
+                        }))}
+                        layout="vertical"
+                        margin={{ top: 12, right: 12, bottom: 12, left: 80 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis
+                          type="number"
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                          allowDecimals={false}
+                        />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={90} />
+                        <Tooltip
+                          formatter={(value, _name, props) => [
+                            `₹${Number(value).toLocaleString()}`,
+                            props.payload?.title || 'Revenue',
+                          ]}
+                        />
+                        <Bar dataKey="revenue" name="Revenue" fill="#f97316" radius={[0, 4, 4, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {insights?.top_revenue_universities?.length > 0 && (
+                <div className="analyst-chart-card">
+                  <h3>Top Revenue-Generating Universities</h3>
+                  <p className="analyst-subtitle">Universities whose courses generate the most revenue.</p>
+                  <div className="chart-wrap">
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart
+                        data={insights.top_revenue_universities}
+                        margin={{ top: 12, right: 12, bottom: 40, left: 12 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                        <XAxis
+                          dataKey="university"
+                          tick={{ fontSize: 11 }}
+                          angle={-25}
+                          textAnchor="end"
+                          interval={0}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          formatter={(value) => [
+                            `₹${Number(value).toLocaleString()}`,
+                            'Revenue',
+                          ]}
+                        />
+                        <Bar dataKey="revenue" name="Revenue" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
               {insights?.users_by_role?.length > 0 && (
                 <div className="analyst-chart-card">
                   <h3>Users by Role</h3>
@@ -266,7 +439,14 @@ function AnalystDashboard({ user, onLogout }) {
                 </div>
               )}
 
-              {(!insights?.enrollments_by_level?.length && !insights?.users_by_role?.length && !insights?.top_courses_by_enrollment?.length) && (
+              {(!insights?.enrollments_by_level?.length &&
+                !insights?.users_by_role?.length &&
+                !insights?.top_courses_by_enrollment?.length &&
+                !insights?.students_by_country?.length &&
+                !insights?.courses_by_university?.length &&
+                !insights?.revenue_by_level?.length &&
+                !insights?.top_revenue_courses?.length &&
+                !insights?.top_revenue_universities?.length) && (
                 <p className="analyst-no-data">No insight data yet.</p>
               )}
             </div>
@@ -278,16 +458,32 @@ function AnalystDashboard({ user, onLogout }) {
               <p className="analyst-subtitle">Select a course to view grade distribution and choose whether to share insights with enrolled students.</p>
               <div className="analyst-course-select-wrap">
                 <label htmlFor="analyst-course-select">Course:</label>
-                <select
-                  id="analyst-course-select"
-                  className="input analyst-course-select"
-                  value={selectedCourseId}
-                  onChange={(e) => setSelectedCourseId(e.target.value)}
-                >
-                  {courses.map((c) => (
-                    <option key={c.course_id} value={c.course_id}>{c.title}</option>
-                  ))}
-                </select>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: 1 }}>
+                  <input
+                    type="text"
+                    placeholder="Search by title..."
+                    className="input"
+                    style={{ maxWidth: 260 }}
+                    value={courseSearch}
+                    onChange={(e) => setCourseSearch(e.target.value)}
+                  />
+                  <select
+                    id="analyst-course-select"
+                    className="input analyst-course-select"
+                    value={selectedCourseId}
+                    onChange={(e) => setSelectedCourseId(e.target.value)}
+                  >
+                    {courses
+                      .filter((c) => {
+                        const q = courseSearch.toLowerCase().trim();
+                        if (!q) return true;
+                        return (c.title || '').toLowerCase().includes(q);
+                      })
+                      .map((c) => (
+                        <option key={c.course_id} value={c.course_id}>{c.title}</option>
+                      ))}
+                  </select>
+                </div>
               </div>
               {loadingCourseAnalytics && <p className="analyst-loading-msg">Loading analytics…</p>}
               {!loadingCourseAnalytics && courseAnalytics && (
@@ -347,6 +543,33 @@ function AnalystDashboard({ user, onLogout }) {
                       </div>
                     ) : (
                       <p className="analyst-no-data">No grade data for this course yet.</p>
+                    )}
+                  </div>
+                  <div className="analyst-chart-card">
+                    <h3>Students by Country (this course)</h3>
+                    {courseAnalytics.students_by_country?.length > 0 ? (
+                      <div className="chart-wrap">
+                        <ResponsiveContainer width="100%" height={280}>
+                          <BarChart
+                            data={courseAnalytics.students_by_country}
+                            margin={{ top: 12, right: 12, bottom: 40, left: 12 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis
+                              dataKey="country"
+                              tick={{ fontSize: 11 }}
+                              angle={-30}
+                              textAnchor="end"
+                              interval={0}
+                            />
+                            <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                            <Tooltip />
+                            <Bar dataKey="count" name="Students" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <p className="analyst-no-data">No country data for this course yet.</p>
                     )}
                   </div>
                 </div>

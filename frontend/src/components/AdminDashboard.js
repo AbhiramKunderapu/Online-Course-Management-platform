@@ -41,6 +41,7 @@ function AdminDashboard({ user, onLogout }) {
   const [pendingSearch, setPendingSearch] = useState('');
   const [usersSearch, setUsersSearch] = useState('');
   const [coursesSearch, setCoursesSearch] = useState('');
+  const [theme, setTheme] = useState('light');
 
   const showToast = (type, message, title) => setToast({ type, message, title });
 
@@ -260,8 +261,12 @@ function AdminDashboard({ user, onLogout }) {
     return <div className="loading">Loading...</div>;
   }
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'light' === prev ? 'dark' : 'dark'));
+  };
+
   return (
-    <div className="dashboard-container">
+    <div className={`dashboard-container ${theme === 'dark' ? 'dark' : 'light'}`}>
       <Toast toast={toast} onClose={() => setToast(null)} />
       <div className="sidebar">
         <h2>🎓 CourseHub</h2>
@@ -276,6 +281,13 @@ function AdminDashboard({ user, onLogout }) {
       <div className="main-content">
         <div className="dashboard-header">
           <h1>Admin Panel - {user.name}</h1>
+          <button
+            type="button"
+            className="btn btn-secondary btn-theme-toggle"
+            onClick={toggleTheme}
+          >
+            {theme === 'dark' ? '🌞 Light' : '🌙 Dark'}
+          </button>
         </div>
 
         <div className="dashboard-content">
@@ -487,9 +499,9 @@ function AdminDashboard({ user, onLogout }) {
                         value={addCourseForm.level}
                         onChange={(e) => setAddCourseForm({ ...addCourseForm, level: e.target.value })}
                       >
-                        <option value="beginner">Beginner</option>
-                        <option value="intermediate">Intermediate</option>
-                        <option value="advanced">Advanced</option>
+                        <option value="Beginner">Beginner</option>
+                        <option value="Intermediate">Intermediate</option>
+                        <option value="Advanced">Advanced</option>
                       </select>
                     </div>
                     <div className="form-group">
@@ -617,9 +629,9 @@ function AdminDashboard({ user, onLogout }) {
                         onChange={(e) => setEditCourseForm({ ...editCourseForm, level: e.target.value })}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <option value="beginner">Beginner</option>
-                        <option value="intermediate">Intermediate</option>
-                        <option value="advanced">Advanced</option>
+                        <option value="Beginner">Beginner</option>
+                        <option value="Intermediate">Intermediate</option>
+                        <option value="Advanced">Advanced</option>
                       </select>
                     </div>
                     <div className="form-group">

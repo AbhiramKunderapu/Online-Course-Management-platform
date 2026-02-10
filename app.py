@@ -276,8 +276,8 @@ def dashboard():
             # Compute counts dynamically from enrolled_in
             cur.execute("""
                 SELECT 
-                    COUNT(*) FILTER (WHERE status != 'dropped') as enrolled,
-                    COUNT(*) FILTER (WHERE status = 'completed') as completed
+                    COUNT(*) AS enrolled,
+                    COUNT(*) FILTER (WHERE status = 'completed') AS completed
                 FROM public.enrolled_in
                 WHERE user_id = %s
             """, (user_id,))
@@ -1180,10 +1180,19 @@ def grade_student():
         course_id = data.get("course_id")
         student_id = data.get("student_id")
         grade = data.get("grade")
-        status = data.get("status", "completed")  # Default to completed when grading
+        # Status is always forced to 'completed' when grading
+        status = "completed"
 
         if not all([instructor_id, course_id, student_id, grade]):
             return jsonify({"error": "All fields are required"}), 400
+
+        # Normalize and validate grade
+        valid_grades = {"EX", "A", "B", "C", "D", "P", "F"}
+        grade_normalized = str(grade).strip().upper()
+        if grade_normalized not in valid_grades:
+            return jsonify({
+                "error": "Grade must be one of: EX, A, B, C, D, P, F."
+            }), 400
 
         conn = get_connection()
         cur = conn.cursor()
@@ -1197,12 +1206,32 @@ def grade_student():
         if cur.fetchone()[0] == 0:
             return jsonify({"error": "You don't teach this course"}), 403
 
-        # Update grade and status
+        # Check existing enrollment and prevent re-grading / changing status
+        cur.execute("""
+            SELECT grade, status
+            FROM public.enrolled_in
+            WHERE user_id = %s AND course_id = %s
+        """, (student_id, course_id))
+        existing = cur.fetchone()
+        if not existing:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Enrollment not found for this student"}), 404
+
+        existing_grade, existing_status = existing
+        if existing_grade is not None or existing_status == "completed":
+            cur.close()
+            conn.close()
+            return jsonify({
+                "error": "Student already has a final grade and completed status; re-grading is not allowed."
+            }), 400
+
+        # Update grade and status (always completed) and set completion date
         cur.execute("""
             UPDATE public.enrolled_in
             SET grade = %s, status = %s, completion_date = CURRENT_DATE
             WHERE user_id = %s AND course_id = %s
-        """, (grade, status, student_id, course_id))
+        """, (grade_normalized, status, student_id, course_id))
 
         conn.commit()
         cur.close()
@@ -2062,6 +2091,15 @@ def analyst_overview():
         cur.execute("SELECT COUNT(*) FROM public.assignment")
         total_assignments = cur.fetchone()[0]
 
+        # Estimate total revenue as sum of course fees across all active enrollments
+        cur.execute("""
+            SELECT COALESCE(SUM(c.fees), 0)
+            FROM public.enrolled_in e
+            JOIN public.course c ON c.course_id = e.course_id
+            WHERE e.status != 'dropped' AND c.fees IS NOT NULL
+        """)
+        total_revenue = float(cur.fetchone()[0] or 0)
+
         completion_rate = round(completed_enrollments / total_enrollments * 100, 1) if total_enrollments > 0 else 0
 
         cur.close()
@@ -2075,7 +2113,8 @@ def analyst_overview():
                 "total_enrollments": total_enrollments,
                 "completed_enrollments": completed_enrollments,
                 "completion_rate": completion_rate,
-                "total_assignments": total_assignments
+                "total_assignments": total_assignments,
+                "total_revenue": total_revenue
             }
         })
     except Exception as e:
@@ -2166,6 +2205,66 @@ def analyst_insights():
         """)
         grade_distribution_platform = [{"grade": str(row[0]), "count": row[1]} for row in cur.fetchall()]
 
+        # Students by country (top 10), based on active enrollments
+        cur.execute("""
+            SELECT COALESCE(s.country, 'Unknown') AS country, COUNT(DISTINCT e.user_id) AS cnt
+            FROM public.enrolled_in e
+            JOIN public.student s ON s.user_id = e.user_id
+            WHERE e.status != 'dropped'
+            GROUP BY country
+            ORDER BY cnt DESC
+            LIMIT 10
+        """)
+        students_by_country = [{"country": row[0], "count": row[1]} for row in cur.fetchall()]
+
+        # Courses per university
+        cur.execute("""
+            SELECT COALESCE(un.name, 'Unspecified') AS university, COUNT(*) AS cnt
+            FROM public.course c
+            LEFT JOIN public.university un ON c.university_id = un.university_id
+            GROUP BY university
+            ORDER BY cnt DESC
+        """)
+        courses_by_university = [{"university": row[0], "courses": row[1]} for row in cur.fetchall()]
+
+        # Revenue by course level
+        cur.execute("""
+            SELECT COALESCE(c.level, 'Unknown') AS level,
+                   COALESCE(SUM(c.fees), 0) AS revenue
+            FROM public.enrolled_in e
+            JOIN public.course c ON c.course_id = e.course_id
+            WHERE e.status != 'dropped' AND c.fees IS NOT NULL
+            GROUP BY level
+            ORDER BY revenue DESC
+        """)
+        revenue_by_level = [{"level": row[0], "revenue": float(row[1] or 0)} for row in cur.fetchall()]
+
+        # Top 5 revenue-generating courses
+        cur.execute("""
+            SELECT c.title, COALESCE(SUM(c.fees), 0) AS revenue
+            FROM public.enrolled_in e
+            JOIN public.course c ON c.course_id = e.course_id
+            WHERE e.status != 'dropped' AND c.fees IS NOT NULL
+            GROUP BY c.course_id, c.title
+            ORDER BY revenue DESC
+            LIMIT 5
+        """)
+        top_revenue_courses = [{"title": row[0], "revenue": float(row[1] or 0)} for row in cur.fetchall()]
+
+        # Top 5 universities by revenue
+        cur.execute("""
+            SELECT COALESCE(un.name, 'Unspecified') AS university,
+                   COALESCE(SUM(c.fees), 0) AS revenue
+            FROM public.enrolled_in e
+            JOIN public.course c ON c.course_id = e.course_id
+            LEFT JOIN public.university un ON c.university_id = un.university_id
+            WHERE e.status != 'dropped' AND c.fees IS NOT NULL
+            GROUP BY university
+            ORDER BY revenue DESC
+            LIMIT 5
+        """)
+        top_revenue_universities = [{"university": row[0], "revenue": float(row[1] or 0)} for row in cur.fetchall()]
+
         cur.close()
         conn.close()
 
@@ -2175,7 +2274,12 @@ def analyst_insights():
                 "enrollments_by_level": enrollments_by_level,
                 "users_by_role": users_by_role,
                 "top_courses_by_enrollment": top_courses,
-                "grade_distribution_platform": grade_distribution_platform
+                "grade_distribution_platform": grade_distribution_platform,
+                "students_by_country": students_by_country,
+                "courses_by_university": courses_by_university,
+                "revenue_by_level": revenue_by_level,
+                "top_revenue_courses": top_revenue_courses,
+                "top_revenue_universities": top_revenue_universities
             }
         })
     except Exception as e:
@@ -2216,6 +2320,17 @@ def analyst_course_analytics(course_id):
         """, (course_id,))
         grade_distribution = [{"grade": str(r[0]), "count": r[1]} for r in cur.fetchall()]
 
+        # Students by country for this course
+        cur.execute("""
+            SELECT COALESCE(s.country, 'Unknown') AS country, COUNT(DISTINCT e.user_id) AS cnt
+            FROM public.enrolled_in e
+            JOIN public.student s ON s.user_id = e.user_id
+            WHERE e.course_id = %s AND e.status != 'dropped'
+            GROUP BY country
+            ORDER BY cnt DESC
+        """, (course_id,))
+        students_by_country = [{"country": r[0], "count": r[1]} for r in cur.fetchall()]
+
         cur.close()
         conn.close()
 
@@ -2229,7 +2344,8 @@ def analyst_course_analytics(course_id):
                 "enrolled": enrolled,
                 "completed": completed,
                 "completion_rate": completion_rate,
-                "grade_distribution": grade_distribution
+                "grade_distribution": grade_distribution,
+                "students_by_country": students_by_country
             }
         })
     except Exception as e:

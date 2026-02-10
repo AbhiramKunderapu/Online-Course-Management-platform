@@ -169,13 +169,12 @@ export const instructorAPI = {
     return response.data;
   },
 
-  gradeStudent: async (instructor_id, course_id, student_id, grade, status = 'completed') => {
+  gradeStudent: async (instructor_id, course_id, student_id, grade) => {
     const response = await api.post('/instructor/grade', {
       instructor_id,
       course_id,
       student_id,
       grade,
-      status,
     });
     return response.data;
   },
