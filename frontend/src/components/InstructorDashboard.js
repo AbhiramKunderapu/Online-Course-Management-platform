@@ -699,7 +699,13 @@ function InstructorDashboard({ user, onLogout }) {
                                     <td>{s.assignment_percent != null ? `${s.assignment_total_obtained}/${s.assignment_total_possible} (${s.assignment_percent}%)` : '-'}</td>
                                     <td><span className={`status-badge status-${s.status}`}>{s.status}</span></td>
                                     <td>{s.grade || '-'}</td>
-                                    <td><button className="btn btn-danger btn-sm" onClick={() => handleRemoveStudent(s.user_id)}>Remove</button></td>
+                                    <td>
+                                      {!s.grade && (
+                                        <button className="btn btn-danger btn-sm" onClick={() => handleRemoveStudent(s.user_id)}>
+                                          Remove
+                                        </button>
+                                      )}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>

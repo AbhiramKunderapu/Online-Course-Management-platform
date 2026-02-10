@@ -1238,6 +1238,22 @@ def remove_student_from_course():
         if cur.fetchone()[0] == 0:
             return jsonify({"error": "You don't teach this course"}), 403
 
+        # Do not allow removal after a final grade has been assigned
+        cur.execute("""
+            SELECT grade FROM public.enrolled_in
+            WHERE user_id = %s AND course_id = %s
+        """, (student_id, course_id))
+        grade_row = cur.fetchone()
+        if not grade_row:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Enrollment not found for this student"}), 404
+
+        if grade_row[0] is not None:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Student already has a final grade and cannot be removed from the course"}), 400
+
         # Update status to dropped
         cur.execute("""
             UPDATE public.enrolled_in
