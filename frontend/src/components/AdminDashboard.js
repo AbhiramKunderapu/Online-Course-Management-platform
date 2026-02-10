@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dashboardAPI, adminAPI } from '../services/api';
+import Toast from './Toast';
 import './Dashboard.css';
 
 function AdminDashboard({ user, onLogout }) {
@@ -36,6 +37,12 @@ function AdminDashboard({ user, onLogout }) {
   const [deleteCourseLoading, setDeleteCourseLoading] = useState(false);
   const [instructorSearch, setInstructorSearch] = useState('');
   const [courseSearch, setCourseSearch] = useState('');
+  const [toast, setToast] = useState(null);
+  const [pendingSearch, setPendingSearch] = useState('');
+  const [usersSearch, setUsersSearch] = useState('');
+  const [coursesSearch, setCoursesSearch] = useState('');
+
+  const showToast = (type, message, title) => setToast({ type, message, title });
 
   useEffect(() => {
     loadDashboardData();
@@ -94,26 +101,24 @@ function AdminDashboard({ user, onLogout }) {
     try {
       const response = await adminAPI.approveUser(userId);
       if (response.success) {
-        alert('User approved successfully');
+        showToast('success', 'User approved successfully');
         loadUsers();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to approve user');
+      showToast('error', error.response?.data?.error || 'Failed to approve user');
     }
   };
 
   const handleDeleteUser = async (userId) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
-      try {
-        const response = await adminAPI.deleteUser(userId);
-        if (response.success) {
-          alert('User deleted successfully');
-          loadUsers();
-          loadDashboardData();
-        }
-      } catch (error) {
-        alert(error.response?.data?.error || 'Failed to delete user');
+    try {
+      const response = await adminAPI.deleteUser(userId);
+      if (response.success) {
+        showToast('success', 'User deleted successfully');
+        loadUsers();
+        loadDashboardData();
       }
+    } catch (error) {
+      showToast('error', error.response?.data?.error || 'Failed to delete user');
     }
   };
 
@@ -125,18 +130,18 @@ function AdminDashboard({ user, onLogout }) {
         assignForm.course_id
       );
       if (response.success) {
-        alert('Instructor assigned successfully');
+        showToast('success', 'Instructor assigned successfully');
         setAssignForm({ instructor_id: '', course_id: '' });
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to assign instructor');
+      showToast('error', error.response?.data?.error || 'Failed to assign instructor');
     }
   };
 
   const handleAddCourse = async (e) => {
     e.preventDefault();
     if (!addCourseForm.university_name || !addCourseForm.university_name.trim()) {
-      alert('University name is required');
+      showToast('error', 'University name is required');
       return;
     }
     setAddCourseLoading(true);
@@ -151,14 +156,14 @@ function AdminDashboard({ user, onLogout }) {
         university_ranking: addCourseForm.university_ranking ? parseInt(addCourseForm.university_ranking, 10) : null
       });
       if (response.success) {
-        alert('Course created successfully!');
+        showToast('success', 'Course created successfully!');
         setShowAddCourse(false);
         setAddCourseForm({ title: '', duration: '', level: 'beginner', description: '', fees: '', university_name: '', university_ranking: '' });
         loadCourses();
         loadDashboardData();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to create course');
+      showToast('error', error.response?.data?.error || 'Failed to create course');
     } finally {
       setAddCourseLoading(false);
     }
@@ -197,13 +202,13 @@ function AdminDashboard({ user, onLogout }) {
     try {
       const response = await adminAPI.deleteCourse(user.user_id, editingCourse.course_id);
       if (response.success) {
-        alert('Course deleted');
+        showToast('success', 'Course deleted');
         closeEditCourse();
         loadCourses();
         loadDashboardData();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to delete course');
+      showToast('error', error.response?.data?.error || 'Failed to delete course');
     } finally {
       setDeleteCourseLoading(false);
     }
@@ -220,7 +225,7 @@ function AdminDashboard({ user, onLogout }) {
         loadCourses();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to remove instructor');
+      showToast('error', error.response?.data?.error || 'Failed to remove instructor');
     }
   };
 
@@ -239,13 +244,13 @@ function AdminDashboard({ user, onLogout }) {
         university_ranking: editCourseForm.university_ranking ? parseInt(editCourseForm.university_ranking, 10) : null
       });
       if (response.success) {
-        alert('Course updated successfully!');
+        showToast('success', 'Course updated successfully!');
         closeEditCourse();
         loadCourses();
         loadDashboardData();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to update course');
+      showToast('error', error.response?.data?.error || 'Failed to update course');
     } finally {
       setEditCourseLoading(false);
     }
@@ -257,6 +262,7 @@ function AdminDashboard({ user, onLogout }) {
 
   return (
     <div className="dashboard-container">
+      <Toast toast={toast} onClose={() => setToast(null)} />
       <div className="sidebar">
         <h2>🎓 CourseHub</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
@@ -292,7 +298,54 @@ function AdminDashboard({ user, onLogout }) {
           {activeTab === 'pending' && (
             <div>
               <h2>Pending Approval</h2>
-              {users.filter(u => !u.approved).length === 0 ? (
+              <div className="section-header" style={{ marginBottom: '12px' }}>
+                <input
+                  type="text"
+                  className="input"
+                  style={{ maxWidth: 420 }}
+                  placeholder="Search pending users (name/email/role)..."
+                  value={pendingSearch}
+                  onChange={(e) => setPendingSearch(e.target.value)}
+                />
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-compact"
+                    onClick={async () => {
+                      const pending = users.filter(u => !u.approved);
+                      for (const u of pending) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await handleApproveUser(u.user_id);
+                      }
+                      showToast('success', 'Approved all pending users');
+                    }}
+                    disabled={users.filter(u => !u.approved).length === 0}
+                  >
+                    Approve all
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-compact"
+                    onClick={async () => {
+                      const pending = users.filter(u => !u.approved);
+                      for (const u of pending) {
+                        // eslint-disable-next-line no-await-in-loop
+                        await handleDeleteUser(u.user_id);
+                      }
+                      showToast('success', 'Rejected all pending users');
+                    }}
+                    disabled={users.filter(u => !u.approved).length === 0}
+                  >
+                    Reject all
+                  </button>
+                </div>
+              </div>
+
+              {users.filter(u => !u.approved).filter((u) => {
+                const q = (pendingSearch || '').toLowerCase().trim();
+                if (!q) return true;
+                return [u.name, u.email, u.role].some((s) => (s || '').toLowerCase().includes(q));
+              }).length === 0 ? (
                 <p>No users pending approval.</p>
               ) : (
                 <table className="table">
@@ -305,15 +358,19 @@ function AdminDashboard({ user, onLogout }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.filter(u => !u.approved).map((u) => (
+                    {users.filter(u => !u.approved).filter((u) => {
+                      const q = (pendingSearch || '').toLowerCase().trim();
+                      if (!q) return true;
+                      return [u.name, u.email, u.role].some((s) => (s || '').toLowerCase().includes(q));
+                    }).map((u) => (
                       <tr key={u.user_id}>
                         <td>{u.name}</td>
                         <td>{u.email}</td>
                         <td>{u.role}</td>
                         <td>
-                          <button className="btn btn-primary" onClick={() => handleApproveUser(u.user_id)} style={{ padding: '6px 12px', marginRight: '8px' }}>Approve</button>
+                          <button className="btn btn-primary btn-compact" onClick={() => handleApproveUser(u.user_id)} style={{ marginRight: '8px' }}>Approve</button>
                           {u.role === 'student' && (
-                            <button className="btn btn-danger" onClick={() => handleDeleteUser(u.user_id)} style={{ padding: '6px 12px' }}>Delete</button>
+                            <button className="btn btn-danger btn-compact" onClick={() => handleDeleteUser(u.user_id)} style={{ width: 'auto' }}>Delete</button>
                           )}
                         </td>
                       </tr>
@@ -327,6 +384,16 @@ function AdminDashboard({ user, onLogout }) {
           {activeTab === 'users' && (
             <div>
               <h2>Manage Users</h2>
+              <div style={{ margin: '8px 0 14px 0' }}>
+                <input
+                  type="text"
+                  className="input"
+                  style={{ maxWidth: 420 }}
+                  placeholder="Search users (name/email/role)..."
+                  value={usersSearch}
+                  onChange={(e) => setUsersSearch(e.target.value)}
+                />
+              </div>
               <table className="table">
                 <thead>
                   <tr>
@@ -338,7 +405,11 @@ function AdminDashboard({ user, onLogout }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {users.filter((u) => {
+                    const q = (usersSearch || '').toLowerCase().trim();
+                    if (!q) return true;
+                    return [u.name, u.email, u.role].some((s) => (s || '').toLowerCase().includes(q));
+                  }).map((u) => (
                     <tr key={u.user_id}>
                       <td>{u.name}</td>
                       <td>{u.email}</td>
@@ -350,10 +421,10 @@ function AdminDashboard({ user, onLogout }) {
                       </td>
                       <td>
                         {!u.approved && (
-                          <button className="btn btn-primary" onClick={() => handleApproveUser(u.user_id)} style={{ padding: '6px 12px', marginRight: '8px' }}>Approve</button>
+                          <button className="btn btn-primary btn-compact" onClick={() => handleApproveUser(u.user_id)} style={{ marginRight: '8px' }}>Approve</button>
                         )}
                         {u.role === 'student' && (
-                          <button className="btn btn-danger" onClick={() => handleDeleteUser(u.user_id)} style={{ padding: '6px 12px', width: 'auto' }}>Delete</button>
+                          <button className="btn btn-danger btn-compact" onClick={() => handleDeleteUser(u.user_id)} style={{ width: 'auto' }}>Delete</button>
                         )}
                       </td>
                     </tr>
@@ -373,6 +444,16 @@ function AdminDashboard({ user, onLogout }) {
                 >
                   {showAddCourse ? '− Cancel' : '+ Add Course'}
                 </button>
+              </div>
+              <div style={{ margin: '8px 0 14px 0' }}>
+                <input
+                  type="text"
+                  className="input"
+                  style={{ maxWidth: 520 }}
+                  placeholder="Search courses (title/university)..."
+                  value={coursesSearch}
+                  onChange={(e) => setCoursesSearch(e.target.value)}
+                />
               </div>
               {showAddCourse && (
                 <form onSubmit={handleAddCourse} className="card add-course-form">
@@ -468,7 +549,11 @@ function AdminDashboard({ user, onLogout }) {
                 {courses.length === 0 ? (
                   <p className="empty-state">No courses yet. Add your first course above!</p>
                 ) : (
-                  courses.map((course) => (
+                  courses.filter((course) => {
+                    const q = (coursesSearch || '').toLowerCase().trim();
+                    if (!q) return true;
+                    return [course.title, course.university_name, course.instructor_names].some((s) => (s || '').toLowerCase().includes(q));
+                  }).map((course) => (
                     <div key={course.course_id} className="course-card course-card-hover-edit">
                       <h4>{course.title}</h4>
                       {course.university_name && (

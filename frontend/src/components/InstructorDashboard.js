@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { dashboardAPI, instructorAPI } from '../services/api';
+import Toast from './Toast';
 import './Dashboard.css';
 
 function InstructorDashboard({ user, onLogout }) {
@@ -23,6 +24,12 @@ function InstructorDashboard({ user, onLogout }) {
   const [editForm, setEditForm] = useState({});
   const [announcements, setAnnouncements] = useState([]);
   const [announcementForm, setAnnouncementForm] = useState({ title: '', content: '' });
+  const [toast, setToast] = useState(null);
+  const [courseSearch, setCourseSearch] = useState('');
+
+  const showToast = (type, message, title) => {
+    setToast({ type, message, title });
+  };
 
   useEffect(() => {
     loadDashboardData();
@@ -76,12 +83,12 @@ function InstructorDashboard({ user, onLogout }) {
     try {
       const response = await instructorAPI.updateProfile(user.user_id, editForm);
       if (response.success) {
-        alert('Profile updated successfully');
+        showToast('success', 'Profile updated successfully');
         setIsEditingProfile(false);
         loadProfile();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to update profile');
+      showToast('error', error.response?.data?.error || 'Failed to update profile');
     }
   };
 
@@ -93,7 +100,7 @@ function InstructorDashboard({ user, onLogout }) {
       }
     } catch (error) {
       console.error('Error loading students:', error);
-      alert(error.response?.data?.error || 'Failed to load students');
+      showToast('error', error.response?.data?.error || 'Failed to load students');
     }
   };
 
@@ -129,7 +136,7 @@ function InstructorDashboard({ user, onLogout }) {
   const handleGradeStudent = async (e) => {
     e.preventDefault();
     if (!selectedCourse) {
-      alert('Please select a course first');
+      showToast('info', 'Please select a course first');
       return;
     }
 
@@ -142,23 +149,19 @@ function InstructorDashboard({ user, onLogout }) {
         gradingForm.status
       );
       if (response.success) {
-        alert('Student graded successfully!');
+        showToast('success', 'Student graded successfully!');
         setGradingForm({ student_id: '', grade: '', status: 'completed' });
         loadCourseStudents(selectedCourse);
         loadDashboardData();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to grade student');
+      showToast('error', error.response?.data?.error || 'Failed to grade student');
     }
   };
 
   const handleRemoveStudent = async (studentId) => {
     if (!selectedCourse) {
-      alert('Please select a course first');
-      return;
-    }
-
-    if (!window.confirm('Are you sure you want to remove this student from the course?')) {
+      showToast('info', 'Please select a course first');
       return;
     }
 
@@ -169,12 +172,12 @@ function InstructorDashboard({ user, onLogout }) {
         studentId
       );
       if (response.success) {
-        alert('Student removed from course');
+        showToast('success', 'Student removed from course');
         loadCourseStudents(selectedCourse);
         loadDashboardData();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to remove student');
+      showToast('error', error.response?.data?.error || 'Failed to remove student');
     }
   };
 
@@ -191,12 +194,12 @@ function InstructorDashboard({ user, onLogout }) {
         moduleForm.duration
       );
       if (response.success) {
-        alert('Module created successfully!');
+        showToast('success', 'Module created successfully!');
         setModuleForm({ course_id: '', module_number: '', name: '', duration: '' });
         if (courseId) loadCourseModules(courseId);
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to create module');
+      showToast('error', error.response?.data?.error || 'Failed to create module');
     }
   };
 
@@ -214,12 +217,12 @@ function InstructorDashboard({ user, onLogout }) {
         contentForm.url
       );
       if (response.success) {
-        alert('Content added successfully!');
+        showToast('success', 'Content added successfully!');
         setContentForm({ course_id: '', module_number: '', title: '', type: 'video', url: '' });
         if (courseId) loadCourseModules(courseId);
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to add content');
+      showToast('error', error.response?.data?.error || 'Failed to add content');
     }
   };
 
@@ -237,7 +240,7 @@ function InstructorDashboard({ user, onLogout }) {
       const response = await instructorAPI.getAssignmentSubmissions(user.user_id, assignmentId);
       if (response.success) setSubmissions(response.submissions);
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to load submissions');
+      showToast('error', error.response?.data?.error || 'Failed to load submissions');
     }
   };
 
@@ -258,13 +261,13 @@ function InstructorDashboard({ user, onLogout }) {
         }
       );
       if (response.success) {
-        alert('Assignment created successfully!');
+        showToast('success', 'Assignment created successfully!');
         setAssignmentForm({ course_id: '', title: '', assignment_url: '', description: '', due_date: '', max_marks: 20 });
         if (courseId) loadAssignments(courseId);
         loadDashboardData();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to create assignment');
+      showToast('error', error.response?.data?.error || 'Failed to create assignment');
     }
   };
 
@@ -276,11 +279,17 @@ function InstructorDashboard({ user, onLogout }) {
     try {
       const response = await instructorAPI.gradeSubmission(user.user_id, submissionId, marks, feedback);
       if (response.success) {
-        alert('Submission graded successfully!');
-        if (selectedAssignment) loadSubmissions(selectedAssignment);
+        showToast('success', 'Submission graded successfully!');
+        if (selectedAssignment) {
+          loadSubmissions(selectedAssignment);
+        }
+        if (selectedCourse) {
+          loadCourseStudents(selectedCourse);
+          loadDashboardData();
+        }
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to grade submission');
+      showToast('error', error.response?.data?.error || 'Failed to grade submission');
     }
   };
 
@@ -290,12 +299,26 @@ function InstructorDashboard({ user, onLogout }) {
     try {
       const response = await instructorAPI.createAnnouncement(user.user_id, selectedCourse, announcementForm.title.trim(), announcementForm.content.trim());
       if (response.success) {
-        alert('Announcement posted!');
+        showToast('success', 'Announcement posted!');
         setAnnouncementForm({ title: '', content: '' });
         loadAnnouncements(selectedCourse);
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to create announcement');
+      showToast('error', error.response?.data?.error || 'Failed to create announcement');
+    }
+  };
+
+  const handleDeleteAnnouncement = async (announcementId) => {
+    if (!announcementId) return;
+    if (!window.confirm('Delete this announcement?')) return;
+    try {
+      const response = await instructorAPI.deleteAnnouncement(user.user_id, announcementId);
+      if (response.success) {
+        showToast('success', 'Announcement deleted');
+        if (selectedCourse) loadAnnouncements(selectedCourse);
+      }
+    } catch (error) {
+      showToast('error', error.response?.data?.error || 'Failed to delete announcement');
     }
   };
 
@@ -318,13 +341,13 @@ function InstructorDashboard({ user, onLogout }) {
 
   const handleEmailAllStudents = () => {
     if (!students.length) {
-      alert('No students enrolled in this course.');
+      showToast('info', 'No students enrolled in this course.');
       return;
     }
   
     const emails = students.map(s => s.email).filter(Boolean);
     if (!emails.length) {
-      alert('No student emails available.');
+      showToast('info', 'No student emails available.');
       return;
     }
   
@@ -349,6 +372,7 @@ function InstructorDashboard({ user, onLogout }) {
 
   return (
     <div className="dashboard-container">
+      <Toast toast={toast} onClose={() => setToast(null)} />
       <div className="sidebar">
         <h2>🎓 CourseHub</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
@@ -420,11 +444,27 @@ function InstructorDashboard({ user, onLogout }) {
           {activeTab === 'courses' && (
             <div>
               <h2>My Courses</h2>
+              {!selectedCourse && (
+                <div style={{ margin: '8px 0 16px 0' }}>
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ maxWidth: 420 }}
+                    placeholder="Search by course title..."
+                    value={courseSearch}
+                    onChange={(e) => setCourseSearch(e.target.value)}
+                  />
+                </div>
+              )}
               {courses.length === 0 ? (
                 <p>You are not teaching any courses yet.</p>
               ) : !selectedCourse ? (
                 <div className="courses-grid">
-                  {courses.map((course) => (
+                  {courses.filter((course) => {
+                    const q = (courseSearch || '').toLowerCase().trim();
+                    if (!q) return true;
+                    return (course.title || '').toLowerCase().includes(q);
+                  }).map((course) => (
                     <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { handleSelectCourse(course.course_id); loadAssignments(course.course_id); setCourseActionTab('announcements'); }}>
                       <h3>{course.title}</h3>
                       <p className="course-level">{course.level}</p>
@@ -443,7 +483,7 @@ function InstructorDashboard({ user, onLogout }) {
                 <div className="course-management-view">
                   <div className="course-header-bar">
                     <h3>{courses.find(c => c.course_id === selectedCourse)?.title}</h3>
-                    <button className="btn btn-secondary" onClick={() => { setSelectedCourse(null); setStudents([]); setModules([]); setAssignments([]); setSelectedAssignment(null); setSubmissions([]); setAnnouncements([]); }}>← Back to Courses</button>
+                    <button className="btn btn-secondary btn-compact" onClick={() => { setSelectedCourse(null); setStudents([]); setModules([]); setAssignments([]); setSelectedAssignment(null); setSubmissions([]); setAnnouncements([]); }}>← Back to Courses</button>
                   </div>
                   <div className="course-action-tabs">
                     <button className={courseActionTab === 'announcements' ? 'active' : ''} onClick={() => setCourseActionTab('announcements')}>Announcements</button>
@@ -479,7 +519,10 @@ function InstructorDashboard({ user, onLogout }) {
                                 <div key={a.announcement_id} className="announcement-item">
                                   <h4>{a.title}</h4>
                                   {a.content && <p>{a.content}</p>}
-                                  <span className="announcement-date">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
+                                  <div className="announcement-footer">
+                                    <span className="announcement-date">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
+                                    <button type="button" className="btn btn-danger btn-sm btn-compact" onClick={() => handleDeleteAnnouncement(a.announcement_id)}>Delete</button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -593,7 +636,7 @@ function InstructorDashboard({ user, onLogout }) {
                                     <span className="assignment-meta">({a.max_marks} marks)</span>
                                     <a href={a.assignment_url} target="_blank" rel="noopener noreferrer" className="assignment-link">View assignment</a>
                                   </div>
-                                  <button type="button" className="btn btn-primary btn-sm assignment-btn-submissions" onClick={() => { setSelectedAssignment(a.assignment_id); loadSubmissions(a.assignment_id); }}>Submissions</button>
+                                  <button type="button" className="btn btn-primary btn-sm btn-compact assignment-btn-submissions" onClick={() => { setSelectedAssignment(a.assignment_id); loadSubmissions(a.assignment_id); }}>Submissions</button>
                                 </div>
                               ))}
                             </div>
@@ -602,24 +645,27 @@ function InstructorDashboard({ user, onLogout }) {
                             <div className="submissions-panel">
                               <div className="submissions-panel-header">
                                 <span>Submissions</span>
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSelectedAssignment(null); setSubmissions([]); }}>Close</button>
+                                <button type="button" className="btn btn-secondary btn-sm btn-compact" onClick={() => { setSelectedAssignment(null); setSubmissions([]); }}>Close</button>
                               </div>
                               {submissions.length > 0 ? (
                                 <div className="table-wrap">
                                   <table className="table submissions-table">
-                                    <thead><tr><th>Student</th><th>Course Total</th><th>Link</th><th>Marks</th><th>Grade</th></tr></thead>
+                                    <thead><tr><th>Student</th><th>Course Total</th><th>Link</th><th>Timing</th><th>Marks</th><th>Grade</th></tr></thead>
                                     <tbody>
                                       {submissions.map((s) => (
                                         <tr key={s.submission_id}>
                                           <td>{s.student_name}</td>
                                           <td>{s.course_percent != null ? `${s.course_total_obtained}/${s.course_total_possible} (${s.course_percent}%)` : '-'}</td>
                                           <td><a href={s.submission_url} target="_blank" rel="noopener noreferrer" className="link-button">View</a></td>
+                                          <td>
+                                            {s.submitted_at ? new Date(s.submitted_at).toLocaleString() : '-'}
+                                          </td>
                                           <td>{s.marks_obtained != null ? `${s.marks_obtained}/${s.max_marks}` : '-'}</td>
                                           <td>
                                             <form onSubmit={(e) => handleGradeSubmission(e, s.submission_id)} className="grade-form">
                                               <input name="marks" type="number" className="input grade-input" min="0" max={s.max_marks} placeholder="Marks" defaultValue={s.marks_obtained ?? ''} />
                                               <input name="feedback" type="text" className="input grade-feedback" placeholder="Feedback" defaultValue={s.feedback ?? ''} />
-                                              <button type="submit" className="btn btn-primary btn-sm">Grade</button>
+                                              <button type="submit" className="btn btn-primary btn-sm btn-compact">Grade</button>
                                             </form>
                                           </td>
                                         </tr>

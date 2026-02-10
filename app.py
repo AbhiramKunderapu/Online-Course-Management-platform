@@ -1392,6 +1392,63 @@ def create_announcement():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/instructor/announcement/<announcement_id>", methods=["DELETE"])
+def delete_announcement(announcement_id):
+    """Delete an announcement (instructor only; must teach the course and own the announcement)."""
+    try:
+        instructor_id = request.args.get("instructor_id")
+        if not instructor_id:
+            return jsonify({"error": "instructor_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT course_id, instructor_id
+            FROM public.announcement
+            WHERE announcement_id = %s::uuid
+        """, (announcement_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Announcement not found"}), 404
+
+        course_id = str(row[0])
+        owner_instructor_id = str(row[1])
+        if owner_instructor_id != str(instructor_id):
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You can only delete your own announcements"}), 403
+
+        # Ensure the instructor still teaches the course
+        cur.execute("""
+            SELECT COUNT(*) FROM public.teaches
+            WHERE instructor_id = %s AND course_id = %s
+        """, (instructor_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You don't teach this course"}), 403
+
+        cur.execute("""
+            DELETE FROM public.announcement
+            WHERE announcement_id = %s::uuid
+            RETURNING announcement_id
+        """, (announcement_id,))
+        deleted = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        if not deleted:
+            return jsonify({"error": "Failed to delete announcement"}), 500
+
+        return jsonify({"success": True, "message": "Announcement deleted"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/instructor/module", methods=["POST"])
 def create_module():
     """Create a new module for a course (instructor only)"""
@@ -1635,7 +1692,7 @@ def get_student_assignments(course_id):
         cur.execute("""
             SELECT a.assignment_id, a.course_id, a.module_number, a.title, a.description,
                    a.assignment_url, a.due_date, a.max_marks, a.created_at,
-                   s.submission_id, s.submission_url, s.marks_obtained, s.feedback
+                   s.submission_id, s.submission_url, s.marks_obtained, s.feedback, s.submitted_at
             FROM public.assignment a
             LEFT JOIN public.assignment_submission s 
                 ON s.assignment_id = a.assignment_id AND s.student_id = %s
@@ -1662,7 +1719,8 @@ def get_student_assignments(course_id):
                 "submission_id": str(row[9]) if row[9] else None,
                 "submission_url": row[10],
                 "marks_obtained": row[11],
-                "feedback": row[12]
+                "feedback": row[12],
+                "submitted_at": str(row[13]) if row[13] else None
             })
 
         return jsonify({"success": True, "assignments": assignments})
@@ -2082,6 +2140,16 @@ def analyst_insights():
         """)
         top_courses = [{"title": row[0], "enrollments": row[1]} for row in cur.fetchall()]
 
+        # Grade distribution across all completed enrollments (for platform-wide chart)
+        cur.execute("""
+            SELECT COALESCE(grade, 'Pending') as grade, COUNT(*) as cnt
+            FROM public.enrolled_in
+            WHERE status = 'completed'
+            GROUP BY grade
+            ORDER BY cnt DESC
+        """)
+        grade_distribution_platform = [{"grade": str(row[0]), "count": row[1]} for row in cur.fetchall()]
+
         cur.close()
         conn.close()
 
@@ -2090,9 +2158,206 @@ def analyst_insights():
             "insights": {
                 "enrollments_by_level": enrollments_by_level,
                 "users_by_role": users_by_role,
-                "top_courses_by_enrollment": top_courses
+                "top_courses_by_enrollment": top_courses,
+                "grade_distribution_platform": grade_distribution_platform
             }
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/course/<course_id>/analytics", methods=["GET"])
+def analyst_course_analytics(course_id):
+    """Get analytics for a single course: grade distribution, enrollment stats (analyst only)."""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT c.title, c.level, c.duration,
+                   COUNT(e.user_id) FILTER (WHERE e.status != 'dropped') as enrolled,
+                   COUNT(e.user_id) FILTER (WHERE e.status = 'completed') as completed
+            FROM public.course c
+            LEFT JOIN public.enrolled_in e ON e.course_id = c.course_id
+            WHERE c.course_id = %s
+            GROUP BY c.course_id, c.title, c.level, c.duration
+        """, (course_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Course not found"}), 404
+
+        title, level, duration, enrolled, completed = row[0], row[1], row[2], row[3] or 0, row[4] or 0
+        completion_rate = round(completed / enrolled * 100, 1) if enrolled > 0 else 0
+
+        cur.execute("""
+            SELECT COALESCE(grade, 'Pending') as grade, COUNT(*) as cnt
+            FROM public.enrolled_in
+            WHERE course_id = %s AND status = 'completed'
+            GROUP BY grade
+            ORDER BY cnt DESC
+        """, (course_id,))
+        grade_distribution = [{"grade": str(r[0]), "count": r[1]} for r in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "course_id": course_id,
+                "title": title,
+                "level": level,
+                "duration": duration,
+                "enrolled": enrolled,
+                "completed": completed,
+                "completion_rate": completion_rate,
+                "grade_distribution": grade_distribution
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/student/courses/<course_id>/analytics", methods=["GET"])
+def student_course_analytics(course_id):
+    """Get course analytics for an enrolled student, only if analyst has published insights for the course."""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # Ensure settings table exists (idempotent)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS public.course_insights_setting (
+                course_id uuid primary key references public.course(course_id) on delete cascade,
+                publish_to_students boolean default false,
+                updated_at timestamp default now()
+            )
+        """)
+
+        cur.execute("""
+            SELECT COUNT(*) FROM public.enrolled_in
+            WHERE user_id = %s AND course_id = %s AND status != 'dropped'
+        """, (user_id, course_id))
+        if cur.fetchone()[0] == 0:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "You are not enrolled in this course"}), 403
+
+        cur.execute("""
+            SELECT c.title, c.level, c.duration,
+                   COUNT(e.user_id) FILTER (WHERE e.status != 'dropped') as enrolled,
+                   COUNT(e.user_id) FILTER (WHERE e.status = 'completed') as completed
+            FROM public.course c
+            LEFT JOIN public.enrolled_in e ON e.course_id = c.course_id
+            WHERE c.course_id = %s
+            GROUP BY c.course_id, c.title, c.level, c.duration
+        """, (course_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Course not found"}), 404
+
+        title, level, duration, enrolled, completed = row[0], row[1], row[2], row[3] or 0, row[4] or 0
+        completion_rate = round(completed / enrolled * 100, 1) if enrolled > 0 else 0
+
+        # Check if analyst has published insights for this course
+        cur.execute("""
+            SELECT publish_to_students
+            FROM public.course_insights_setting
+            WHERE course_id = %s
+        """, (course_id,))
+        setting_row = cur.fetchone()
+        published = bool(setting_row[0]) if setting_row is not None else False
+
+        if not published:
+            cur.close()
+            conn.close()
+            return jsonify({
+                "success": True,
+                "published": False,
+                "data": None
+            })
+
+        cur.execute("""
+            SELECT COALESCE(grade, 'Pending') as grade, COUNT(*) as cnt
+            FROM public.enrolled_in
+            WHERE course_id = %s AND status = 'completed'
+            GROUP BY grade
+            ORDER BY cnt DESC
+        """, (course_id,))
+        grade_distribution = [{"grade": str(r[0]), "count": r[1]} for r in cur.fetchall()]
+
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "published": True,
+            "data": {
+                "course_id": course_id,
+                "title": title,
+                "level": level,
+                "duration": duration,
+                "enrolled": enrolled,
+                "completed": completed,
+                "completion_rate": completion_rate,
+                "grade_distribution": grade_distribution
+            }
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/analyst/course/<course_id>/insights-setting", methods=["GET", "POST"])
+def analyst_course_insights_setting(course_id):
+    """Get or update whether course insights should be published to students."""
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+
+        # Ensure settings table exists
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS public.course_insights_setting (
+                course_id uuid primary key references public.course(course_id) on delete cascade,
+                publish_to_students boolean default false,
+                updated_at timestamp default now()
+            )
+        """)
+
+        if request.method == "GET":
+            cur.execute("""
+                SELECT publish_to_students
+                FROM public.course_insights_setting
+                WHERE course_id = %s
+            """, (course_id,))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            published = bool(row[0]) if row is not None else False
+            return jsonify({"success": True, "published": published})
+
+        # POST: update setting
+        data = request.get_json() or {}
+        publish = bool(data.get("publish_to_students", False))
+
+        cur.execute("""
+            INSERT INTO public.course_insights_setting (course_id, publish_to_students, updated_at)
+            VALUES (%s::uuid, %s, now())
+            ON CONFLICT (course_id) DO UPDATE
+            SET publish_to_students = EXCLUDED.publish_to_students,
+                updated_at = now()
+        """, (course_id, publish))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True, "published": publish})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

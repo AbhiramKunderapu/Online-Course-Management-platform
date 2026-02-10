@@ -21,6 +21,18 @@
   width: 100%;
 }
 
+/* Utility: compact/inline buttons (avoid full-width) */
+.btn.btn-compact {
+  width: auto;
+  padding: 8px 14px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+
+.btn.btn-compact:hover {
+  transform: translateY(-1px);
+}
+
 .btn {
   position: relative;
   overflow: hidden;

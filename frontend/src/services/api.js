@@ -273,6 +273,13 @@ export const instructorAPI = {
     });
     return response.data;
   },
+
+  deleteAnnouncement: async (instructor_id, announcement_id) => {
+    const response = await api.delete(`/instructor/announcement/${announcement_id}`, {
+      params: { instructor_id },
+    });
+    return response.data;
+  },
 };
 
 // Student Course Content API
@@ -306,6 +313,13 @@ export const studentCourseAPI = {
     });
     return response.data;
   },
+
+  getCourseAnalytics: async (user_id, course_id) => {
+    const response = await api.get(`/student/courses/${course_id}/analytics`, {
+      params: { user_id },
+    });
+    return response.data;
+  },
 };
 
 // Analyst API
@@ -320,6 +334,20 @@ export const analystAPI = {
   },
   getInsights: async () => {
     const response = await api.get('/analyst/insights');
+    return response.data;
+  },
+  getCourseAnalytics: async (courseId) => {
+    const response = await api.get(`/analyst/course/${courseId}/analytics`);
+    return response.data;
+  },
+  getCourseInsightsSetting: async (courseId) => {
+    const response = await api.get(`/analyst/course/${courseId}/insights-setting`);
+    return response.data;
+  },
+  updateCourseInsightsSetting: async (courseId, publish_to_students) => {
+    const response = await api.post(`/analyst/course/${courseId}/insights-setting`, {
+      publish_to_students,
+    });
     return response.data;
   },
 };

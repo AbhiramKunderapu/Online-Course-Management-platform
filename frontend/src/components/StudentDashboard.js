@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { dashboardAPI, coursesAPI, studentAPI, studentCourseAPI } from '../services/api';
+import Toast from './Toast';
 import './Dashboard.css';
 
 function StudentDashboard({ user, onLogout }) {
@@ -19,8 +21,17 @@ function StudentDashboard({ user, onLogout }) {
   const [submittingFor, setSubmittingFor] = useState(null);
   const [submitUrl, setSubmitUrl] = useState('');
   const [announcements, setAnnouncements] = useState([]);
+  const [courseAnalytics, setCourseAnalytics] = useState(null);
   const [browseSearch, setBrowseSearch] = useState('');
   const [browseLevelFilter, setBrowseLevelFilter] = useState('all');
+  const [toast, setToast] = useState(null);
+  const [showInsights, setShowInsights] = useState(false);
+  const [moduleSearch, setModuleSearch] = useState('');
+  const [selectedModule, setSelectedModule] = useState('');
+
+  const showToast = (type, message, title) => {
+    setToast({ type, message, title });
+  };
 
   useEffect(() => {
     loadDashboardData();
@@ -110,13 +121,13 @@ function StudentDashboard({ user, onLogout }) {
     try {
       const response = await coursesAPI.enroll(user.user_id, courseId);
       if (response.success) {
-        alert('Enrolled successfully!');
+        showToast('success', 'Enrolled successfully!');
         loadAllEnrolledCourses();
         loadActiveCourses();
         loadDashboardData();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to enroll');
+      showToast('error', error.response?.data?.error || 'Failed to enroll');
     }
   };
 
@@ -132,12 +143,12 @@ function StudentDashboard({ user, onLogout }) {
         phone_number: editForm.phone_number
       });
       if (response.success) {
-        alert('Phone number updated successfully!');
+        showToast('success', 'Profile updated successfully!');
         setIsEditingProfile(false);
         loadProfile();
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to update profile');
+      showToast('error', error.response?.data?.error || 'Failed to update profile');
     }
   };
 
@@ -156,7 +167,7 @@ function StudentDashboard({ user, onLogout }) {
       }
     } catch (error) {
       console.error('Error loading course content:', error);
-      alert(error.response?.data?.error || 'Failed to load course content');
+      showToast('error', error.response?.data?.error || 'Failed to load course content');
     }
   };
 
@@ -166,7 +177,7 @@ function StudentDashboard({ user, onLogout }) {
       if (response.success) setAssignments(response.assignments);
     } catch (error) {
       console.error('Error loading assignments:', error);
-      alert(error.response?.data?.error || 'Failed to load assignments');
+      showToast('error', error.response?.data?.error || 'Failed to load assignments');
     }
   };
 
@@ -180,19 +191,33 @@ function StudentDashboard({ user, onLogout }) {
     }
   };
 
+  const loadCourseAnalytics = async (courseId) => {
+    try {
+      const response = await studentCourseAPI.getCourseAnalytics(user.user_id, courseId);
+      if (response.success && response.published && response.data) {
+        setCourseAnalytics(response.data);
+      } else {
+        setCourseAnalytics(null);
+      }
+    } catch (error) {
+      console.error('Error loading course analytics:', error);
+      setCourseAnalytics(null);
+    }
+  };
+
   const handleSubmitAssignment = async (e) => {
     e.preventDefault();
     if (!submittingFor || !submitUrl.trim()) return;
     try {
       const response = await studentCourseAPI.submitAssignment(user.user_id, submittingFor, submitUrl.trim());
       if (response.success) {
-        alert('Submission successful!');
+        showToast('success', 'Submission successful!');
         setSubmittingFor(null);
         setSubmitUrl('');
         if (selectedActiveCourse) loadAssignments(selectedActiveCourse);
       }
     } catch (error) {
-      alert(error.response?.data?.error || 'Failed to submit');
+      showToast('error', error.response?.data?.error || 'Failed to submit');
     }
   };
 
@@ -202,6 +227,7 @@ function StudentDashboard({ user, onLogout }) {
 
   return (
     <div className="dashboard-container">
+      <Toast toast={toast} onClose={() => setToast(null)} />
       <div className="sidebar">
         <h2>🎓 CourseHub</h2>
         <a href="#dashboard" onClick={() => setActiveTab('dashboard')}>Dashboard</a>
@@ -380,7 +406,7 @@ function StudentDashboard({ user, onLogout }) {
               ) : !selectedActiveCourse ? (
                 <div className="courses-grid">
                   {activeCourses.map((course) => (
-                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); loadAnnouncements(course.course_id); }}>
+                    <div key={course.course_id} className="course-card course-card-clickable" onClick={() => { setSelectedActiveCourse(course.course_id); loadCourseContent(course.course_id); loadAssignments(course.course_id); loadAnnouncements(course.course_id); loadCourseAnalytics(course.course_id); }}>
                       <h3>{course.title}</h3>
                       {course.university_name && (
                         <p className="course-meta">Offered by: {course.university_name}{course.university_ranking != null ? ` (Rank #${course.university_ranking})` : ''}</p>
@@ -395,58 +421,144 @@ function StudentDashboard({ user, onLogout }) {
               ) : (
                 <div className="student-course-view">
                   <div className="student-course-header">
-                    <h3>{activeCourses.find(c => c.course_id === selectedActiveCourse)?.title}</h3>
-                    {(() => {
-                      const c = activeCourses.find(c => c.course_id === selectedActiveCourse);
-                      return (c?.university_name || c?.instructor_names) ? (
-                        <p className="course-meta" style={{ marginTop: '4px' }}>
-                          {c?.university_name && <>Offered by: {c.university_name}{c?.university_ranking != null ? ` (Rank #${c.university_ranking})` : ''}</>}
-                          {c?.university_name && c?.instructor_names && ' · '}
-                          {c?.instructor_names && <>Taught by: {c.instructor_names}</>}
-                        </p>
-                      ) : null;
-                    })()}
-                    <button className="btn btn-secondary" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); setAnnouncements([]); }}>← Back to Courses</button>
+                    <div className="student-course-header-info">
+                      <h3>{activeCourses.find(c => c.course_id === selectedActiveCourse)?.title}</h3>
+                      {(() => {
+                        const c = activeCourses.find(c => c.course_id === selectedActiveCourse);
+                        return (c?.university_name || c?.instructor_names) ? (
+                          <p className="student-course-meta">
+                            {c?.university_name && <>Offered by: {c.university_name}{c?.university_ranking != null ? ` (Rank #${c.university_ranking})` : ''}</>}
+                            {c?.university_name && c?.instructor_names && ' · '}
+                            {c?.instructor_names && <>Taught by: {c.instructor_names}</>}
+                          </p>
+                        ) : null;
+                      })()}
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      {courseAnalytics && (
+                        <button
+                          className="btn btn-secondary btn-compact"
+                          type="button"
+                          onClick={() => setShowInsights((v) => !v)}
+                        >
+                          {showInsights ? 'Hide insights' : 'View insights'}
+                        </button>
+                      )}
+                      <button className="btn btn-secondary btn-compact" onClick={() => { setSelectedActiveCourse(null); setCourseModules([]); setAssignments([]); setSubmittingFor(null); setSubmitUrl(''); setAnnouncements([]); setCourseAnalytics(null); setShowInsights(true); }}>← Back to Courses</button>
+                    </div>
                   </div>
 
-                  <div className="student-course-section">
-                    <h3>Announcements</h3>
-                    {announcements.length === 0 ? (
-                      <p style={{ color: '#666', margin: 0 }}>No announcements for this course yet.</p>
-                    ) : (
-                      <div className="announcements-list">
-                        {announcements.map((a) => (
-                          <div key={a.announcement_id} className="announcement-item">
-                            <h4>{a.title}</h4>
-                            {a.content && <p>{a.content}</p>}
-                            <span className="announcement-date">{a.created_at ? new Date(a.created_at).toLocaleString() : ''}</span>
+                  {showInsights ? (
+                    <div className="student-course-section student-course-insights">
+                      <h3>Course insights</h3>
+                      {courseAnalytics ? (
+                        <>
+                          <p style={{ color: '#64748b', fontSize: '13px', margin: '0 0 16px 0' }}>Enrollment and grade distribution for this course.</p>
+                          <div className="analyst-course-stats" style={{ marginBottom: '16px' }}>
+                            <div className="stat-card small">
+                              <h3>Enrolled</h3>
+                              <div className="value">{courseAnalytics.enrolled}</div>
+                            </div>
+                            <div className="stat-card small">
+                              <h3>Completed</h3>
+                              <div className="value">{courseAnalytics.completed}</div>
+                            </div>
+                            <div className="stat-card small">
+                              <h3>Completion rate</h3>
+                              <div className="value">{courseAnalytics.completion_rate}%</div>
+                            </div>
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
+                          {courseAnalytics.grade_distribution?.length > 0 ? (
+                            <div className="student-insights-chart-wrap">
+                              <h4 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#475569' }}>Students vs grade</h4>
+                              <ResponsiveContainer width="100%" height={240}>
+                                <BarChart data={courseAnalytics.grade_distribution} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                  <XAxis dataKey="grade" tick={{ fontSize: 11 }} />
+                                  <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                                  <Tooltip />
+                                  <Bar dataKey="count" name="Students" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          ) : (
+                            <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>No grade data for this course yet.</p>
+                          )}
+                        </>
+                      ) : (
+                        <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>Insights are not available for this course yet.</p>
+                      )}
+                    </div>
+                  ) : (
+                  <>
                   <div className="student-course-section">
                     <h3>Course Content</h3>
                     {courseModules.length === 0 ? (
                       <p style={{ color: '#666', margin: 0 }}>No modules available for this course yet.</p>
                     ) : (
-                      courseModules.map((module) => (
-                        <div key={module.module_number} className="student-module-block">
-                          <h4>Module {module.module_number}: {module.name}</h4>
-                          {module.duration && <p style={{ color: '#666', fontSize: '13px', margin: '0 0 8px 0' }}>Duration: {module.duration}</p>}
-                          {module.content.length === 0 ? (
-                            <p style={{ color: '#999', fontStyle: 'italic', margin: 0, fontSize: '14px' }}>No content in this module.</p>
-                          ) : (
-                            module.content.map((content) => (
-                              <div key={content.content_id} className="student-content-item">
-                                <span><strong>{content.title}</strong><span className="content-type-badge">{content.type}</span></span>
-                                <a href={content.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-sm">View</a>
-                              </div>
-                            ))
-                          )}
+                      <>
+                        <div className="form-row" style={{ marginBottom: '16px', alignItems: 'center' }}>
+                          <div className="form-group" style={{ flex: 1, minWidth: 220 }}>
+                            <label>Search module</label>
+                            <input
+                              type="text"
+                              className="input"
+                              placeholder="Search by module number or name..."
+                              value={moduleSearch}
+                              onChange={(e) => setModuleSearch(e.target.value)}
+                            />
+                          </div>
+                          <div className="form-group" style={{ width: 220 }}>
+                            <label>Select module</label>
+                            <select
+                              className="input"
+                              value={selectedModule || (courseModules[0]?.module_number ?? '')}
+                              onChange={(e) => setSelectedModule(e.target.value)}
+                            >
+                              {courseModules
+                                .filter((m) => {
+                                  const q = (moduleSearch || '').toLowerCase().trim();
+                                  if (!q) return true;
+                                  const num = String(m.module_number || '');
+                                  const name = (m.name || '').toLowerCase();
+                                  return num.includes(q) || name.includes(q);
+                                })
+                                .map((m) => (
+                                  <option key={m.module_number} value={m.module_number}>
+                                    {`Module ${m.module_number}: ${m.name}`}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
                         </div>
-                      ))
+                        {(() => {
+                          const activeModule =
+                            courseModules.find((m) => String(m.module_number) === String(selectedModule)) ||
+                            courseModules[0];
+                          if (!activeModule) {
+                            return <p style={{ color: '#666', margin: 0 }}>No modules match your search.</p>;
+                          }
+                          return (
+                            <div key={activeModule.module_number} className="student-module-block">
+                              <h4>Module {activeModule.module_number}: {activeModule.name}</h4>
+                              {activeModule.duration && <p style={{ color: '#666', fontSize: '13px', margin: '0 0 8px 0' }}>Duration: {activeModule.duration}</p>}
+                              {activeModule.content.length === 0 ? (
+                                <p style={{ color: '#999', fontStyle: 'italic', margin: 0, fontSize: '14px' }}>No content in this module.</p>
+                              ) : (
+                                activeModule.content.map((content) => (
+                                  <div key={content.content_id} className="student-content-item">
+                                    <div className="student-content-left">
+                                      <span className="student-content-title" title={content.title}>{content.title}</span>
+                                      <span className="content-type-badge">{content.type}</span>
+                                    </div>
+                                    <a href={content.url} target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-view-compact btn-compact">View</a>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </>
                     )}
                   </div>
 
@@ -475,6 +587,7 @@ function StudentDashboard({ user, onLogout }) {
                                     <span className="student-submission-status">
                                       Submitted: <a href={a.submission_url} target="_blank" rel="noopener noreferrer">View</a>
                                       {a.marks_obtained != null && ` · Marks: ${a.marks_obtained}/${a.max_marks}`}
+                                      {a.submitted_at && ` · Submitted at: ${new Date(a.submitted_at).toLocaleString()}`}
                                       {a.feedback && ` · Feedback: ${a.feedback}`}
                                     </span>
                                   ) : (
@@ -496,6 +609,8 @@ function StudentDashboard({ user, onLogout }) {
                       </>
                     )}
                   </div>
+                  </>
+                  )}
                 </div>
               )}
             </div>
